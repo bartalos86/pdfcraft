@@ -118,7 +118,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Hungarian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "ec962852ad41003cf7992f3adf0448fbc3514a3b74b38e2a875a0bb07e5446f9"
+sha256 = "96fa31e4e77f54680ee2d66ad2a8d6662fd6dea592f8b07126e06f0bcbfc5248"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/bg.tsv"

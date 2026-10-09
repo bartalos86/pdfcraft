@@ -788,10 +788,10 @@
 	Couldn't open the signed version: {e}	Az aláírt változatot nem sikerült megnyitni: {e}
 	Sign with a Digital ID	Aláírás digitális azonosítóval
 	Choose the digital ID that you want to use for signing:	Válaszd ki az aláíráshoz használandó digitális azonosítót:
-	Keychain  ·  	Kulcskarika  ·
-	Windows store  ·  	Windows-tároló  ·
-	Issued by: 	Kiállította:
-	, Expires: 	, lejár:
+	Keychain  ·  	Kulcskarika  ·  
+	Windows store  ·  	Windows-tároló  ·  
+	Issued by: 	Kiállította: 
+	, Expires: 	, lejár: 
 	No digital IDs yet.	Még nincs digitális azonosító.
 	Configure New Digital ID	Új digitális azonosító beállítása
 	Continue	Tovább
@@ -2045,3 +2045,40 @@ comment menu	Edit	Szerkesztés
 signature pad	Type	Gépelés
 action wizard	Start	Indítás
 	Reopen the files that were open when PdfCraft last closed	A PdfCraft legutóbbi bezárásakor megnyitott fájlok újranyitása
+	Clear Recent Files	Legutóbbi fájlok listájának törlése
+	Remove from Recent	Eltávolítás a legutóbbiak közül
+	Remove {name} from Recent	{name} eltávolítása a legutóbbiak közül
+
+# Labels that reach tl!() through a variable (Fill & Sign buttons, link prompts, notices, history labels, checker and certificate rows)
+	Add {what}	{what} hozzáadása
+	Use {what}	{what} használata
+	Place saved {what}	Mentett elem elhelyezése: {what}
+	Remove saved {what}	Mentett elem eltávolítása: {what}
+	A link	Egy hivatkozás
+	A button	Egy gomb
+	A script	Egy szkript
+	{who} in this document tried to open an address PdfCraft won't open: {e}.	{who} ebben a dokumentumban olyan címet próbált megnyitni, amelyet a PdfCraft nem nyit meg: {e}.
+	{who} in this document tried to open an address PdfCraft won't open: {e}. Only web (http, https) and email (mailto) links open from documents.	{who} ebben a dokumentumban olyan címet próbált megnyitni, amelyet a PdfCraft nem nyit meg: {e}. Dokumentumokból csak webes (http, https) és e-mail (mailto) hivatkozások nyílnak meg.
+	Another file dialog is still open. Finish with it first.	Egy másik fájlpárbeszédablak még nyitva van. Előbb fejezd be azt.
+	Couldn't show the file picker. Please try again.	Nem sikerült megjeleníteni a fájlválasztót. Próbáld újra.
+	The document changed while you were choosing a file, so nothing was changed.	A dokumentum megváltozott, amíg fájlt választottál, ezért semmi sem módosult.
+	The document was closed before it could be saved.	A dokumentum bezárult, mielőtt menteni lehetett volna.
+	The pages were extracted but not deleted, because the document changed while you were choosing a folder.	Az oldalak kinyerése megtörtént, de nem lettek törölve, mert a dokumentum megváltozott, amíg mappát választottál.
+	That didn't work: an internal error stopped it ({m}).	Ez nem sikerült: belső hiba állította le ({m}).
+	The Windows store's digital IDs couldn't be listed: {e}	A Windows-tároló digitális azonosítóit nem sikerült listázni: {e}
+	Align fields	Mezők igazítása
+	Distribute fields	Mezők elosztása
+	Match field sizes	Mezőméretek egyeztetése
+	Mark for redaction	Megjelölés kitakarásra
+	Mark pages for redaction	Oldalak megjelölése kitakarásra
+	Change document properties	Dokumentum tulajdonságainak módosítása
+	Mark differences	Különbségek megjelölése
+	Run form script	Űrlapszkript futtatása
+	Scripted content must be usable with a keyboard and assistive technology. Check the document's scripts.	A szkriptelt tartalomnak billentyűzettel és kisegítő technológiával is használhatónak kell lennie. Ellenőrizd a dokumentum szkriptjeit.
+	Table rows belong directly in a table or its head, body or foot. Fix the table's tags.	A táblázatsorok közvetlenül a táblázatba vagy annak fejlécébe, törzsébe vagy láblécébe tartoznak. Javítsd a táblázat címkéit.
+	Basic constraints	Alapvető korlátozások
+	SHA-1 digest	SHA-1 kivonat
+	SHA-256 digest	SHA-256 kivonat
+	Squiggly	Hullámos
+	Home / End	Home / End
+	H / Space (hold)	H / szóköz (nyomva tartva)
