@@ -1,8 +1,9 @@
 //! Document inspection: everything panels need that is not pixels.
 //!
 //! Page geometry comes from hayro (which resolves inheritance and rotation); the rest comes from
-//! lopdf (bootstrap, replaced by `pdfcraft-model` in M2). Inspection is *tolerant*: when lopdf
-//! cannot load a file that hayro can render, panels are simply empty and `warnings` says why.
+//! the lazy COS reader through a read-only lopdf object adapter. The original lopdf loader
+//! remains the compatibility fallback. When neither can inspect a renderable file, panels
+//! are empty and `warnings` says why.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use lopdf::{Dictionary, Document, LoadOptions, Object, ObjectId};
 use pdfcraft_cos::page_labels::{MAX_LABEL_BYTES, MAX_LABEL_TOTAL_BYTES, MAX_LABEL_TREE_DEPTH, MAX_LABEL_TREE_WORK, MAX_PREFIX_BYTES, alpha, roman};
 
 use crate::OpenError;
+use crate::structure::{LazyStructure, Structure};
 
 /// lopdf decodes object and cross-reference streams while it loads, with no limit unless one is
 /// set: a few hundred bytes of nested FlateDecode then inflate to gigabytes. Real object and
@@ -372,7 +374,28 @@ pub fn inspect(bytes: Arc<Vec<u8>>, password: Option<&str>) -> Result<DocInfo, O
         Err(p) => return Err(OpenError::Invalid(format!("the page tree could not be read: {}", crate::raster::panic_message(&p)))),
     }
     let options = load_options(password);
+    // Geometry no longer needs the renderer parser. Do not overlap its allocations with
+    // structural inspection, including the compatibility fallback for damaged files.
+    drop(pdf);
     inspect_structure(&mut info, |tmp| {
+        // The lazy reader first; lopdf's repair/tolerance path when it can't expose the same
+        // page tree or an object a panel needs. No partial result is published.
+        let lazy = catch_unwind(AssertUnwindSafe(|| {
+            let doc = LazyStructure::new(bytes.clone(), password).ok()?;
+            let mut t = DocInfo { pages: tmp.pages.clone(), ..Default::default() };
+            let inspector = Inspector::new(&doc);
+            if inspector.page_index.len() != t.pages.len() {
+                return None;
+            }
+            inspector.fill(&mut t);
+            (!doc.failed()).then_some(t)
+        }))
+        .ok()
+        .flatten();
+        if let Some(t) = lazy {
+            *tmp = t;
+            return Ok(());
+        }
         let doc = Document::load_mem_with_options(&bytes, options).map_err(|e| e.to_string())?;
         Inspector::new(&doc).fill(tmp);
         Ok(())
@@ -404,7 +427,7 @@ fn inspect_structure(info: &mut DocInfo, fill: impl FnOnce(&mut DocInfo) -> Resu
 }
 
 struct Inspector<'a> {
-    doc: &'a Document,
+    doc: &'a dyn Structure,
     page_index: HashMap<ObjectId, usize>,
     /// Named destinations (`/Names /Dests` tree), keyed by raw string bytes, built once.
     /// Looking each name up by walking the tree was O(links × names): minutes on manuals.
@@ -412,7 +435,7 @@ struct Inspector<'a> {
 }
 
 impl<'a> Inspector<'a> {
-    fn new(doc: &'a Document) -> Self {
+    fn new(doc: &'a dyn Structure) -> Self {
         let page_index = doc.get_pages().into_iter().map(|(n, id)| (id, n as usize - 1)).collect();
         let mut me = Self { doc, page_index, named: HashMap::new() };
         let mut named = HashMap::new();
@@ -427,8 +450,8 @@ impl<'a> Inspector<'a> {
 
     fn fill(&self, info: &mut DocInfo) {
         // lopdf drops /Encrypt from the trailer once it has decrypted the file.
-        info.encrypted = self.doc.is_encrypted() || self.doc.was_encrypted() || self.doc.trailer.get(b"Encrypt").is_ok();
-        if let Some(d) = self.doc.trailer.get(b"Info").ok().and_then(|o| self.dict(o)) {
+        info.encrypted = self.doc.encrypted();
+        if let Some(d) = self.doc.trailer().get(b"Info").ok().and_then(|o| self.dict(o)) {
             info.title = self.text(d, b"Title");
             info.author = self.text(d, b"Author");
             info.subject = self.text(d, b"Subject");
@@ -497,7 +520,7 @@ impl<'a> Inspector<'a> {
     fn text(&self, d: &Dictionary, key: &[u8]) -> Option<String> {
         let o = self.resolve(d.get(key).ok()?);
         let s = match o {
-            Object::String(..) => lopdf::decode_text_string(o).ok()?,
+            Object::String(bytes, _) => text_string(bytes),
             Object::Name(n) => String::from_utf8_lossy(n).into_owned(),
             _ => return None,
         };
@@ -582,7 +605,10 @@ impl<'a> Inspector<'a> {
         if let Ok(Object::Array(pairs)) = node.get(b"Names").map(|o| self.resolve(o)) {
             for pair in pairs.chunks(2) {
                 if let [k, v] = pair {
-                    let key = lopdf::decode_text_string(self.resolve(k)).unwrap_or_default();
+                    let key = match self.resolve(k) {
+                        Object::String(bytes, _) => text_string(bytes),
+                        _ => String::new(),
+                    };
                     out.push((key, v));
                 }
             }
@@ -789,7 +815,11 @@ impl<'a> Inspector<'a> {
                     }
                     continue;
                 }
-                if matches!(subtype.as_str(), "Widget" | "Popup") {
+                // Not comments: form widgets, pop-ups and non-markup annotations such as the
+                // Screen annotation that drives a LaTeX `animate` player (keep in step with
+                // `pdfcraft_annot::is_comment_subtype`).
+                if matches!(subtype.as_str(), "Widget" | "Popup" | "Screen" | "Movie" | "RichMedia" | "3D" | "PrinterMark" | "TrapNet" | "Watermark")
+                {
                     continue;
                 }
                 let rect = rect4(self.resolve(d.get(b"Rect").unwrap_or(&Object::Null)));
@@ -942,8 +972,16 @@ impl<'a> Inspector<'a> {
         };
         let value = match d.get(b"V").map(|v| self.resolve(v)) {
             Ok(Object::Name(n)) => Some(String::from_utf8_lossy(n).into_owned()),
-            Ok(v @ Object::String(..)) => lopdf::decode_text_string(v).ok(),
-            Ok(Object::Array(a)) => Some(a.iter().filter_map(|x| lopdf::decode_text_string(self.resolve(x)).ok()).collect::<Vec<_>>().join(", ")),
+            Ok(Object::String(bytes, _)) => Some(text_string(bytes)),
+            Ok(Object::Array(a)) => Some(
+                a.iter()
+                    .filter_map(|x| match self.resolve(x) {
+                        Object::String(bytes, _) => Some(text_string(bytes)),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
             Ok(Object::Dictionary(_)) if kind == FieldKind::Signature => Some("signed".into()),
             _ => None,
         };
@@ -1087,6 +1125,12 @@ impl<'a> Inspector<'a> {
         let display = d.and_then(|d| self.text(d, b"UF").or_else(|| self.text(d, b"F"))).unwrap_or(name);
         Attachment { name: display, description: d.and_then(|d| self.text(d, b"Desc")), size, source }
     }
+}
+
+/// A text string's value, decoded by the same rules as the engine's object model
+/// ([`pdfcraft_cos::PdfString::to_text`]) so the panels and outline editing agree.
+fn text_string(bytes: &[u8]) -> String {
+    pdfcraft_cos::PdfString::literal(bytes).to_text()
 }
 
 fn rect4(o: &Object) -> [f32; 4] {
@@ -1494,6 +1538,36 @@ trailer << /Root 1 0 R >>
     }
 
     #[test]
+    fn lazy_structure_matches_the_compatibility_inspector() {
+        // Each fixture as lopdf writes it, and with its objects in object streams.
+        let packed = |bytes: &[u8]| {
+            let doc = pdfcraft_cos::Document::open(Arc::new(bytes.to_vec())).unwrap();
+            pdfcraft_cos::write_full(&doc, &pdfcraft_cos::SaveOptions { object_streams: true, ..Default::default() }).unwrap()
+        };
+        let fixtures = [ATTACHMENTS, LAYERS, DESTS].into_iter().flat_map(|bytes| {
+            let mut original = Document::load_mem(bytes).unwrap();
+            let mut plain = Vec::new();
+            original.save_to(&mut plain).unwrap();
+            let stm = packed(&plain);
+            [plain, stm]
+        });
+        for bytes in fixtures {
+            let lazy = LazyStructure::new(Arc::new(bytes.clone()), None).unwrap();
+            let eager = Document::load_mem(&bytes).unwrap();
+            let mut a = inspect(Arc::new(bytes), None).unwrap();
+            let mut b = DocInfo { pages: a.pages.clone(), ..Default::default() };
+            let mut c = DocInfo { pages: a.pages.clone(), ..Default::default() };
+            Inspector::new(&lazy).fill(&mut b);
+            Inspector::new(&eager).fill(&mut c);
+            assert!(!lazy.failed());
+            assert_eq!(format!("{b:?}"), format!("{c:?}"));
+            a.file_size = 0;
+            a.pdf_version.clear();
+            assert_eq!(format!("{a:?}"), format!("{c:?}"));
+        }
+    }
+
+    #[test]
     fn links_read_set_layer_actions() {
         let info = inspect(Arc::new(LAYERS.to_vec()), None).expect("opens");
         let targets: Vec<_> = info.links.iter().map(|l| l.target.clone()).collect();
@@ -1596,6 +1670,29 @@ trailer << /Root 1 0 R >>
                 LinkTarget::Page(1, Fit),
             ]
         );
+    }
+
+    #[test]
+    fn outline_titles_decode_every_text_string_encoding() {
+        // Issue #142: CJK bookmark titles showed as mojibake or with a stray BOM.
+        let pdf = b"%PDF-1.7
+1 0 obj << /Type /Catalog /Pages 2 0 R /Outlines 10 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 400] >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R >> endobj
+10 0 obj << /Type /Outlines /First 11 0 R /Last 16 0 R /Count 6 >> endobj
+11 0 obj << /Title <FEFF7B2C4E007AE0> /Parent 10 0 R /Next 12 0 R /Dest [3 0 R /Fit] >> endobj
+12 0 obj << /Title <EFBBBFE79BAEE5BD95> /Parent 10 0 R /Next 13 0 R /Dest [3 0 R /Fit] >> endobj
+13 0 obj << /Title <EFBBBF41FF42> /Parent 10 0 R /Next 14 0 R /Dest [3 0 R /Fit] >> endobj
+14 0 obj << /Title <E6A682E8BFB0> /Parent 10 0 R /Next 15 0 R /Dest [3 0 R /Fit] >> endobj
+15 0 obj << /Title <436166E9> /Parent 10 0 R /Next 16 0 R /Dest [3 0 R /Fit] >> endobj
+16 0 obj << /Title <FEFFFEFF0041> /Parent 10 0 R /Dest [3 0 R /Fit] >> endobj
+trailer << /Root 1 0 R >>
+%%EOF";
+        let info = inspect(Arc::new(pdf.to_vec()), None).expect("opens");
+        let titles: Vec<_> = info.outline.iter().map(|o| o.title.as_str()).collect();
+        // UTF-16BE, UTF-8 with BOM, invalid UTF-8 after a BOM (lossy, not dropped), BOM-less
+        // raw UTF-8, PDFDocEncoding Latin-1, and a doubled BOM.
+        assert_eq!(titles, ["第一章", "目录", "A\u{FFFD}B", "概述", "Café", "A"]);
     }
 
     #[test]

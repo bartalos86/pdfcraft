@@ -1761,6 +1761,34 @@ fn exporting_office_files_keeps_images() {
     assert!(String::from_utf8(d.export_office(compare::OfficeFormat::Html)).unwrap().contains("data:image/png;base64,"));
 }
 
+/// #314: a page whose content is drawn through a form XObject exports its text (the file from
+/// the report: no xref table, wrong stream lengths).
+#[test]
+fn exporting_office_files_reads_form_xobjects() {
+    let pdf = b"%PDF-1.4
+1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj
+2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj
+3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</XObject<</Fm1 7 0 R>>>>/Contents 5 0 R>> endobj
+4 0 obj <</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>> endobj
+5 0 obj <</Length 22>> stream
+q 1 0 0 1 0 0 cm /Fm1 Do Q
+endstream endobj
+7 0 obj <</Type/XObject/Subtype/Form/BBox[0 0 595 842]/Resources<</Font<</F1 4 0 R>>>>/Length 60>> stream
+BT /F1 18 Tf 72 760 Td (Hello from a test invoice) Tj ET
+endstream endobj
+trailer <</Root 1 0 R>>
+%%EOF
+";
+    let mut s = Session::new();
+    let id = s.open("form.pdf", None, Arc::new(pdf.to_vec()), None).unwrap();
+    let d = s.get(id).unwrap();
+    let blocks: Vec<String> = d.export_pages()[0].blocks.iter().map(|b| b.text.clone()).collect();
+    assert_eq!(blocks, ["Hello from a test invoice"]);
+    assert!(String::from_utf8(d.export_office(compare::OfficeFormat::Html)).unwrap().contains("Hello from a test invoice"));
+    // Edit text still offers only what the page's own streams show.
+    assert!(d.text_blocks(0).is_empty());
+}
+
 #[test]
 fn exporting_office_files_keeps_text_colour() {
     // #526: a dark green heading came out black in Word.
@@ -1962,6 +1990,68 @@ fn xfa_data_no_field_binds_to_survives_an_edit_and_save() {
     let doc = s.get(id).unwrap();
     assert!(doc.info.warnings.iter().any(|w| w.contains("structured content")), "{:?}", doc.info.warnings);
     assert!(doc.xfa_warnings.iter().any(|w| w.contains("structured content")));
+}
+
+#[test]
+fn xfa_choice_lists_signature_and_picture_fields_open_fill_script_and_save() {
+    let data = "<form><page1><country>Japan</country><langs>English\nSpanish</langs></page1></form>";
+    let bytes = Arc::new(pdfcraft_xfa::fixtures::shell(&pdfcraft_xfa::fixtures::fields_template(data)));
+    let mut s = Session::new().with_clock(|| 1_700_000_000);
+    let id = s.open("fields.pdf", None, bytes, None).expect("opens");
+    let field = |s: &Session, n: &str| s.get(id).unwrap().form.iter().find(|f| f.name == n).cloned().unwrap_or_else(|| panic!("no field {n}"));
+    use pdfcraft_forms::FieldKind as K;
+    // The forms layer sees a combo box with its options and the data's saved value, a
+    // multi-select list with both picks, an editable combo, a password field and a signature.
+    let country = field(&s, "country");
+    assert_eq!((country.kind, country.value.clone()), (K::Combo, vec!["JP".to_string()]));
+    assert_eq!(country.options, vec![("CA".into(), "Canada".into()), ("FR".into(), "France".into()), ("JP".into(), "Japan".into())]);
+    let langs = field(&s, "langs");
+    assert_eq!(langs.kind, K::List);
+    assert!(langs.has(pdfcraft_forms::flags::MULTI_SELECT));
+    assert_eq!(langs.value, vec!["English".to_string(), "Spanish".to_string()]);
+    assert!(field(&s, "other").has(pdfcraft_forms::flags::EDIT));
+    assert!(field(&s, "pin").has(pdfcraft_forms::flags::PASSWORD));
+    assert_eq!(field(&s, "sign").kind, K::Signature);
+    // Scripts read a choice list's saved value.
+    assert_eq!(field(&s, "summary").value, vec!["Country: JP".to_string()], "{:?}", s.take_js_output(id));
+    // Choosing another item recalculates; the list takes several values; a typed value is kept
+    // in the editable list and refused in the fixed one.
+    s.apply(id, Edit::SetFieldValue { name: "country".into(), value: FieldValue::Choice(vec!["CA".into()]) }).unwrap();
+    assert_eq!(field(&s, "summary").value, vec!["Country: CA".to_string()]);
+    s.apply(id, Edit::SetFieldValue { name: "langs".into(), value: FieldValue::Choice(vec!["French".into(), "Spanish".into()]) }).unwrap();
+    s.apply(id, Edit::SetFieldValue { name: "other".into(), value: FieldValue::Text("typed".into()) }).unwrap();
+    assert!(s.apply(id, Edit::SetFieldValue { name: "country".into(), value: FieldValue::Choice(vec!["Mars".into()]) }).is_err());
+    // Saved: the datasets hold the saved values, several on separate lines; reopened, the
+    // fields and the calculation are what they were.
+    let saved = s.save_bytes(id).unwrap();
+    let cos = pdfcraft_cos::Document::open(saved.clone()).unwrap();
+    let d = pdfcraft_xfa::data_of(&cos).unwrap();
+    assert_eq!(d.text_at(&pdfcraft_xfa::som_to_path("form[0].page1[0].country[0]")), Some("CA"));
+    assert_eq!(d.text_at(&pdfcraft_xfa::som_to_path("form[0].page1[0].langs[0]")), Some("French\nSpanish"));
+    assert_eq!(d.text_at(&pdfcraft_xfa::som_to_path("form[0].page1[0].other[0]")), Some("typed"));
+    let id2 = s.open("again.pdf", None, saved.clone(), None).unwrap();
+    let d2 = s.get(id2).unwrap();
+    let f2 = |n: &str| d2.form.iter().find(|f| f.name == n).unwrap().value.clone();
+    assert_eq!(f2("country"), vec!["CA".to_string()]);
+    assert_eq!(f2("langs"), vec!["French".to_string(), "Spanish".to_string()]);
+    assert_eq!(f2("summary"), vec!["Country: CA".to_string()]);
+    // The PNG of the image field and the GIF of the draw are pictures on the page.
+    assert_eq!(s.get(id).unwrap().page_images(0).len(), 2);
+    // Filled in by another viewer since: saved values, several on separate lines, and shown
+    // text (an older viewer's), are taken on reopen; shown text that means the current value
+    // is not a change.
+    let mut cos = pdfcraft_cos::Document::open(saved).unwrap();
+    pdfcraft_xfa::write_data_value(&mut cos, &pdfcraft_xfa::som_to_path("form[0].page1[0].langs[0]"), "English\nSpanish").unwrap();
+    pdfcraft_xfa::write_data_value(&mut cos, &pdfcraft_xfa::som_to_path("form[0].page1[0].country[0]"), "Canada").unwrap();
+    let edited = Arc::new(pdfcraft_cos::write_incremental(&cos, &pdfcraft_cos::SaveOptions::default()).unwrap());
+    let id3 = s.open("elsewhere.pdf", None, edited, None).unwrap();
+    let d3 = s.get(id3).unwrap();
+    let f3 = |n: &str| d3.form.iter().find(|f| f.name == n).unwrap().value.clone();
+    assert_eq!(f3("langs"), vec!["English".to_string(), "Spanish".to_string()]);
+    assert_eq!(f3("country"), vec!["CA".to_string()]);
+    let taken: Vec<&String> = d3.info.warnings.iter().filter(|w| w.contains("another viewer")).collect();
+    assert_eq!(taken.len(), 1, "{:?}", d3.info.warnings);
+    assert!(taken[0].contains("langs") && !taken[0].contains("country"), "{}", taken[0]);
 }
 
 #[test]
