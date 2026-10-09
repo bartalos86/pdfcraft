@@ -269,6 +269,9 @@ impl Document {
     pub fn page_image_file(&self, page: usize, index: usize) -> Result<(&'static str, Vec<u8>), String> {
         let editor = self.editor.as_ref().ok_or("the document can't be read")?;
         let img = self.page_images(page).into_iter().nth(index).ok_or_else(|| format!("page {} has no image {}", page + 1, index + 1))?;
+        if img.is_form {
+            return Err("grouped Form artwork is not a bitmap; Save Image As is only available for raster images".into());
+        }
         pdfcraft_create::image_file(&editor.cos, img.object.ok_or("the image has no object")?)
     }
 
@@ -1582,7 +1585,14 @@ fn run_edit(doc: &mut pdfcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -> 
                 ImageEdit::Flip { horizontal } => {
                     pdfcraft_edit::ImageChange::Transform(pdfcraft_edit::turn_about_centre(img.rect, 0, *horizontal, !*horizontal))
                 }
-                ImageEdit::Replace { name, bytes } => pdfcraft_edit::ImageChange::Replace(embed_image(doc, name, bytes)?.0),
+                ImageEdit::Replace { name, bytes } => {
+                    if img.is_form {
+                        return Err(EditError::Edit(pdfcraft_edit::EditError::Invalid(
+                            "grouped Form artwork cannot be replaced with a bitmap".into(),
+                        )));
+                    }
+                    pdfcraft_edit::ImageChange::Replace(embed_image(doc, name, bytes)?.0)
+                }
                 ImageEdit::Delete => pdfcraft_edit::ImageChange::Delete,
             };
             pdfcraft_edit::change_image(doc, *page, *index, &c)?;
@@ -1969,6 +1979,17 @@ fn xfa_values_from_datasets(doc: &mut pdfcraft_cos::Document) -> Result<Vec<Stri
     for (name, value) in pdfcraft_xfa::read_values(doc, &data) {
         let Some(f) = fields.iter().find(|f| f.name == name) else { continue };
         let new = match value {
+            pdfcraft_xfa::FieldData::Text(t) if matches!(f.kind, pdfcraft_forms::FieldKind::Combo | pdfcraft_forms::FieldKind::List) => {
+                // Saved values, one per line for a multi-select list; shown text stands for
+                // its saved value (an older viewer may have written it).
+                let saved = |v: &str| f.options.iter().find(|(e, s)| e == v || s == v).map_or(v.to_string(), |(e, _)| e.clone());
+                let picked: Vec<String> = if f.has(pdfcraft_forms::flags::MULTI_SELECT) {
+                    t.lines().map(str::trim).filter(|l| !l.is_empty()).map(saved).collect()
+                } else {
+                    vec![saved(t.trim())]
+                };
+                (f.value != picked).then_some(FieldValue::Choice(picked))
+            }
             pdfcraft_xfa::FieldData::Text(t) => (f.value.join("\n") != t).then_some(FieldValue::Text(t)),
             pdfcraft_xfa::FieldData::Check(on) => (f.value.is_empty() == on).then_some(FieldValue::Check(on)),
             pdfcraft_xfa::FieldData::Radio(sel) => (f.value.first() != sel.as_ref()).then_some(FieldValue::Radio(sel)),
