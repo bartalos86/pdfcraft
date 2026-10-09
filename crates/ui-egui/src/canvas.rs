@@ -23,6 +23,8 @@ const MARGIN: f32 = 28.0;
 const SIDE: f32 = 70.0;
 const THUMB_TAG: u64 = 1 << 63;
 const TEXT_TAG: u64 = 1 << 62;
+/// A page rendered for the organize grid at the size it is drawn there.
+const GRID_TAG: u64 = 1 << 61;
 /// The tag of a raster that is out of date (shown until its replacement arrives).
 const STALE_TAG: u64 = u64::MAX;
 /// Pages whose raster would exceed this many device pixels on a side are drawn in tiles.
@@ -284,6 +286,8 @@ pub struct DocView {
     pub sign: crate::sign_ui::SignView,
     /// Organize: the pages being dragged to a new place.
     pub org_drag: Option<Vec<usize>>,
+    /// Pages panel: the pages being dragged to a new place.
+    pub panel_drag: Option<Vec<usize>>,
     /// Marquee Zoom / Snapshot: the rectangle being dragged (page, start), and a finished one.
     pub marquee: Option<(usize, Pos2)>,
     pub marquee_done: Option<crate::zoom_snap::Marquee>,
@@ -300,6 +304,29 @@ pub struct DocView {
     /// The page-grid gap under the pointer this frame (where dropped files go), when it can
     /// take pages.
     pub grid_gap: Option<usize>,
+    /// How large the page grid draws its pages (1.0 = the usual thumbnails).
+    grid_zoom: f32,
+    /// A zoom asked for this frame (toolbar, pinch, keys); the grid applies it once it has laid
+    /// out, so it can keep the same pages in view.
+    grid_zoom_request: Option<f32>,
+    /// The page to keep in place after a grid zoom, and how far below the top of the grid its
+    /// cell was.
+    grid_anchor: Option<(usize, f32)>,
+    /// Sharp renders of the pages the grid shows larger than a thumbnail: only those in view,
+    /// at the size drawn (device pixels wide).
+    grid_pages: HashMap<usize, (u32, TextureHandle)>,
+}
+
+/// The page grid's zoom range and the step of its buttons and keys.
+pub const GRID_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.5..=3.0;
+const GRID_ZOOM_STEP: f32 = 1.25;
+/// How far a sharp grid render may be from the size drawn before it is redone: a pinch changes
+/// the size on every frame, and a slightly soft or slightly large image is fine meanwhile.
+const GRID_SHARP: std::ops::RangeInclusive<f32> = 0.9..=1.6;
+
+/// Whether an image `have` device pixels wide is good enough to draw `want` pixels wide.
+fn sharp_enough(have: u32, want: f32) -> bool {
+    want > 0.0 && GRID_SHARP.contains(&(have as f32 / want))
 }
 
 /// Organize-toolbar actions that need the app (file pickers, new tabs, dialogs).
@@ -334,6 +361,11 @@ impl DocView {
     /// Whether a middle-button scrolling gesture is active (tests and automation).
     pub fn auto_scrolling(&self) -> bool {
         self.auto_scroll.active()
+    }
+
+    /// Whether a held middle-button pan is active, outside Linux (tests and automation).
+    pub fn middle_panning(&self) -> bool {
+        self.auto_scroll.panning()
     }
 
     /// Pages that could not be rendered, with the reason (for automation; 0-based pages).
@@ -400,6 +432,10 @@ impl DocView {
             pending_action: None,
             insert_at: None,
             grid_gap: None,
+            grid_zoom: 1.0,
+            grid_zoom_request: None,
+            grid_anchor: None,
+            grid_pages: HashMap::new(),
             comments: Default::default(),
             measure: Default::default(),
             forms: Default::default(),
@@ -411,6 +447,7 @@ impl DocView {
             crop_drag: None,
             sign: Default::default(),
             org_drag: None,
+            panel_drag: None,
             marquee: None,
             marquee_done: None,
             fill_text: None,
@@ -429,6 +466,10 @@ impl DocView {
         self.current = self.current.min(last);
         self.page_input = (self.current + 1).to_string();
         self.selected.retain(|p| *p <= last);
+        // Text being typed on a page that no longer exists goes with the page.
+        if self.content.draft.as_ref().is_some_and(|d| d.page > last || self.page_count == 0) {
+            self.content.draft = None;
+        }
         if self.select_anchor.is_some_and(|a| a > last) {
             self.select_anchor = None;
         }
@@ -436,6 +477,8 @@ impl DocView {
         self.goto_point = None;
         self.zoom_anchor = None;
         self.flash = None;
+        // A thumbnail drag holds page indexes from before the change.
+        self.panel_drag = None;
     }
 
     /// Pages an organize command acts on: the selection, or the current page.
@@ -494,6 +537,8 @@ impl DocView {
             p.tag = STALE_TAG;
         }
         self.stale_thumbs.extend(self.thumbs.keys().copied());
+        // Pages may have moved: a sharp render of another page would be worse than a soft one.
+        self.grid_pages.clear();
         self.tiles.clear();
         self.texts.clear();
         self.text_failed.clear();
@@ -886,6 +931,23 @@ impl DocView {
         true
     }
 
+    /// How large the page grid draws its pages (1.0 = the usual thumbnails).
+    pub fn grid_zoom(&self) -> f32 {
+        self.grid_zoom
+    }
+
+    /// Zoom the page grid; out-of-range values are clamped and nonsense is ignored.
+    pub fn set_grid_zoom(&mut self, zoom: f32) {
+        if zoom.is_finite() {
+            self.grid_zoom = zoom.clamp(*GRID_ZOOM_RANGE.start(), *GRID_ZOOM_RANGE.end());
+        }
+    }
+
+    /// How many device pixels wide the grid's sharp render of `page` is, if it has one.
+    pub fn grid_page_pixels(&self, page: usize) -> Option<u32> {
+        self.grid_pages.get(&page).map(|(w, _)| *w)
+    }
+
     /// Zoom keeping the centre of the view still.
     pub fn set_zoom(&mut self, zoom: f32) {
         let centre = self.viewport_screen.center();
@@ -953,7 +1015,10 @@ impl DocView {
                 self.tiles.insert((page, t.x / TILE, t.y / TILE), (r.request.tag, tex));
                 continue;
             }
-            if r.request.tag & THUMB_TAG != 0 {
+            if r.request.tag & GRID_TAG != 0 {
+                let tex = ctx.load_texture(format!("grid-{:?}-{page}", self.id), img, TextureOptions::LINEAR);
+                self.grid_pages.insert(page, (r.width, tex));
+            } else if r.request.tag & THUMB_TAG != 0 {
                 let tex = ctx.load_texture(format!("thumb-{:?}-{page}", self.id), img, TextureOptions::LINEAR);
                 self.thumbs.insert(page, tex);
                 self.stale_thumbs.remove(&page);
@@ -1182,15 +1247,29 @@ pub fn shortcuts(view: &mut DocView, ctx: &egui::Context) {
     if pressed(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::Minus)) {
         view.rotate_view(false);
     }
-    if pressed(cmd(Key::Plus)) || pressed(cmd(Key::Equals)) {
-        view.zoom_step(true);
-    }
-    if pressed(cmd(Key::Minus)) {
-        view.zoom_step(false);
-    }
-    if pressed(cmd(Key::Num0)) {
-        view.fit = Fit::Page;
-        view.goto = Some((view.current, 0.0));
+    // In the page grid ⌘+ / ⌘− / ⌘0 size its pages instead (looking is always allowed).
+    let (zoom_in, zoom_out, zoom_reset) = (pressed(cmd(Key::Plus)) || pressed(cmd(Key::Equals)), pressed(cmd(Key::Minus)), pressed(cmd(Key::Num0)));
+    if view.organize {
+        if zoom_in {
+            view.grid_zoom_request = Some(view.grid_zoom * GRID_ZOOM_STEP);
+        }
+        if zoom_out {
+            view.grid_zoom_request = Some(view.grid_zoom / GRID_ZOOM_STEP);
+        }
+        if zoom_reset {
+            view.grid_zoom_request = Some(1.0);
+        }
+    } else {
+        if zoom_in {
+            view.zoom_step(true);
+        }
+        if zoom_out {
+            view.zoom_step(false);
+        }
+        if zoom_reset {
+            view.fit = Fit::Page;
+            view.goto = Some((view.current, 0.0));
+        }
     }
     if pressed(cmd(Key::Num1)) {
         view.set_zoom(1.0);
@@ -1526,6 +1605,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         let mut current = view.current;
         let mut best_overlap = -1.0f32;
         let mut current_overlap = -1.0f32;
+        let mut current_height = f32::INFINITY;
         let pointer = ui.input(|i| i.pointer.hover_pos());
         for &i in &visible_pages {
             let r = snap_to_pixels(rects[i].translate(origin.to_vec2()), ppp);
@@ -1541,6 +1621,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             let overlap = r.intersect(visible).height();
             if i == view.current {
                 current_overlap = overlap;
+                current_height = r.height();
             }
             // Pages shown equally (two rows wholly on screen) differ only by rounding: the
             // topmost one counts.
@@ -1970,7 +2051,10 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         }
         // The page navigated to stays current while no page shows more of itself, so the next
         // page step starts from it rather than from a page further down the screen (#188).
-        if current_overlap >= best_overlap - TIE {
+        // It also stays current while it is wholly on screen: a short page (a cheque) gone to
+        // from the Pages panel shows less of itself than the tall page below it, and must not
+        // hand the highlight to that page.
+        if current_overlap >= best_overlap - TIE || current_overlap >= current_height - TIE {
             current = view.current;
         }
         if view.layout != PageLayout::Single {
@@ -2778,6 +2862,30 @@ fn organize_toolbar(view: &mut DocView, info: &DocInfo, editable: bool, dirty: b
                 if save.on_hover_text(tl!("Save these pages as one PDF")).on_disabled_hover_text(tl!("No changes to save")).clicked() {
                     view.pending_action = Some(ViewAction::Save);
                 }
+                ui.add_space(8.0);
+                // Page size in the grid (right to left: in, the percentage, out).
+                let zoom = view.grid_zoom;
+                if ui
+                    .add_enabled_ui(zoom < *GRID_ZOOM_RANGE.end(), |ui| icons::button(ui, "zoom-in", 30.0, false, tl!("Larger pages")))
+                    .inner
+                    .clicked()
+                {
+                    view.grid_zoom_request = Some(zoom * GRID_ZOOM_STEP);
+                }
+                let percent = egui::Button::new(egui::RichText::new(format!("{:.0}%", zoom * 100.0)).font(theme::medium(12.0)).color(t.text_muted))
+                    .frame(false);
+                let percent = ui.add_sized([44.0, 30.0], percent);
+                percent.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Reset page size")));
+                if percent.on_hover_text(tl!("Reset page size")).clicked() {
+                    view.grid_zoom_request = Some(1.0);
+                }
+                if ui
+                    .add_enabled_ui(zoom > *GRID_ZOOM_RANGE.start(), |ui| icons::button(ui, "zoom-out", 30.0, false, tl!("Smaller pages")))
+                    .inner
+                    .clicked()
+                {
+                    view.grid_zoom_request = Some(zoom / GRID_ZOOM_STEP);
+                }
             });
         });
     });
@@ -2845,7 +2953,9 @@ fn organize_grid(
     t: &Tokens,
 ) {
     let ppp = ui.ctx().pixels_per_point();
-    let cell = vec2(190.0, 250.0);
+    // The page image scales with the zoom; the padding and the page number don't.
+    let cell = vec2(146.0 * view.grid_zoom + 44.0, 194.0 * view.grid_zoom + 56.0);
+    let anchor = view.grid_anchor.take();
     let mut open_page = None;
     organize_toolbar(view, info, editable, dirty, ui, t);
     let viewport = ui.available_rect_before_wrap();
@@ -2858,6 +2968,9 @@ fn organize_grid(
     };
     let middle_gesture = view.auto_scroll.blocks_input();
     let mut cells: Vec<(usize, Rect)> = Vec::with_capacity(info.pages.len());
+    // The pages in view that are drawn larger than their thumbnails, and those of them that
+    // need a sharper render than they have.
+    let (mut in_view, mut sharper): (Vec<usize>, Vec<RenderRequest>) = (Vec::new(), Vec::new());
     let mut drop = false;
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if middle_gesture {
@@ -2880,6 +2993,9 @@ fn organize_grid(
                 let c = Rect::from_min_size(pos2(row_rect.left() + left + col as f32 * cell.x, row_rect.top()), cell);
                 let resp = ui.interact(c, ui.id().with(("org", i)), if editable { Sense::click_and_drag() } else { Sense::click() });
                 cells.push((i, c));
+                if let Some((_, above)) = anchor.filter(|(page, _)| *page == i) {
+                    ui.scroll_to_rect_animation(c.translate(vec2(0.0, -above)), Some(egui::Align::Min), egui::style::ScrollAnimation::none());
+                }
                 // Drag pages to move them (the selection, or the page grabbed).
                 if resp.drag_started() {
                     if !view.selected.contains(&i) {
@@ -2907,7 +3023,19 @@ fn organize_grid(
                 }
                 ui.painter().rect_filled(pr.translate(vec2(0.0, 1.5)), CornerRadius::same(1), t.page_shadow);
                 ui.painter().rect_filled(pr, CornerRadius::ZERO, Color32::WHITE);
-                if let Some(tex) = view.thumbs.get(&i) {
+                // A page drawn larger than its thumbnail gets a render at the size drawn, while
+                // it is in view; until that arrives the thumbnail stands in.
+                let want = size.x * ppp;
+                let thumb = view.thumbs.get(&i);
+                let thumb_ok = thumb.is_some_and(|t| t.size()[0] as f32 >= want * GRID_SHARP.start());
+                let sharp = view.grid_pages.get(&i).filter(|_| !thumb_ok);
+                if !thumb_ok && ui.is_rect_visible(c) {
+                    in_view.push(i);
+                    if !sharp.is_some_and(|(w, _)| sharp_enough(*w, want)) && !view.errors.contains_key(&i) {
+                        sharper.push(RenderRequest { page: i, kind: RequestKind::Pixels, tile: None, scale: want / p.width.max(1.0), tag: GRID_TAG });
+                    }
+                }
+                if let Some(tex) = sharp.map(|(_, t)| t).or(thumb) {
                     ui.painter().image(tex.id(), pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 }
                 ui.painter().rect_stroke(pr, CornerRadius::ZERO, Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
@@ -3016,11 +3144,30 @@ fn organize_grid(
         }
     }
     view.auto_scroll.paint(ui, viewport);
+    // Pinch, or Ctrl/⌘ with the wheel, zooms the grid about the page under the pointer.
+    let pinch = ui.input(|i| i.zoom_delta());
+    if (pinch - 1.0).abs() > 0.001 && pointer.is_some() && !middle_gesture {
+        view.grid_zoom_request = Some(view.grid_zoom * pinch);
+    }
+    if let Some(zoom) = view.grid_zoom_request.take() {
+        let before = view.grid_zoom;
+        view.set_grid_zoom(zoom);
+        if view.grid_zoom != before {
+            // Keep the page under the pointer (or else the first one in view) where it is.
+            let under = pointer.and_then(|p| cells.iter().find(|(_, r)| r.contains(p)));
+            let anchor = under.or_else(|| cells.iter().find(|(_, r)| r.bottom() > viewport.top()));
+            view.grid_anchor = anchor.map(|(i, r)| (*i, r.top() - viewport.top()));
+            ui.ctx().request_repaint();
+        }
+    }
+    // Sharp renders are kept only for the pages in view, so their memory stays small however
+    // long the document is. They come first; the thumbnails of the other pages follow.
+    view.grid_pages.retain(|page, _| in_view.contains(page));
     let s = THUMB_W * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max);
-    let queue: Vec<RenderRequest> = (0..info.pages.len())
+    let thumbs = (0..info.pages.len())
         .filter(|p| (!view.thumbs.contains_key(p) || view.stale_thumbs.contains(p)) && !view.errors.contains_key(p))
-        .map(|page| RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG })
-        .collect();
+        .map(|page| RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG });
+    let queue: Vec<RenderRequest> = sharper.into_iter().chain(thumbs).collect();
     if queue != view.last_queue {
         pool.set_queue(queue.clone());
         view.last_queue = queue;
@@ -3065,6 +3212,23 @@ trailer << /Root 1 0 R >>
         let img = texture_image(size, out.rgba);
         assert_eq!(img, copied);
         assert_eq!(img.pixels.as_ptr().cast::<u8>(), at, "the renderer's own buffer");
+    }
+
+    #[test]
+    fn grid_zoom_is_clamped_and_sharp_renders_tolerate_a_pinch() {
+        assert!(sharp_enough(900, 876.0) && sharp_enough(800, 876.0) && sharp_enough(1300, 876.0));
+        assert!(!sharp_enough(264, 876.0), "a thumbnail stretched over a zoomed page");
+        assert!(!sharp_enough(876, 200.0), "far larger than drawn: wasteful");
+        assert!(!sharp_enough(100, 0.0) && !sharp_enough(100, f32::NAN));
+        let mut v = view(3, PageLayout::Continuous);
+        for odd in [f32::NAN, f32::INFINITY] {
+            v.set_grid_zoom(odd);
+            assert_eq!(v.grid_zoom(), 1.0);
+        }
+        v.set_grid_zoom(99.0);
+        assert_eq!(v.grid_zoom(), 3.0);
+        v.set_grid_zoom(-4.0);
+        assert_eq!(v.grid_zoom(), 0.5);
     }
 
     fn view(pages: usize, layout: PageLayout) -> DocView {

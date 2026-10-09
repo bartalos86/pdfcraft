@@ -132,7 +132,7 @@ fn language_switch_preserves_document_and_command_ids() {
     let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
     assert_eq!(documents[0]["dirty"], true);
     let commands = ok(&mut h, &c, "ui.commands", json!({}));
-    for code in ["ja", "zh-hans", "fr", "de", "en"] {
+    for code in ["ja", "zh-hans", "fr", "de", "uk", "en"] {
         ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": code }));
         h.run_steps(2);
         let state = ok(&mut h, &c, "ui.state", json!({}));
@@ -446,7 +446,7 @@ fn organize_pages_supports_autoscroll_without_selecting_or_reordering_pages() {
 
 #[cfg(not(target_os = "linux"))]
 #[test]
-fn middle_button_input_does_not_start_custom_scrolling_outside_linux() {
+fn middle_button_pans_while_held_outside_linux() {
     for organize in [false, true] {
         let (mut h, c) = harness_pages(40);
         h.state_mut().views[0].organize = organize;
@@ -455,8 +455,26 @@ fn middle_button_input_does_not_start_custom_scrolling_outside_linux() {
         ok(&mut h, &c, "ui.click", json!({ "x": p.x, "y": p.y, "button": "middle" }));
         ok(&mut h, &c, "ui.move", json!({ "x": p.x, "y": p.y + 50.0 }));
         h.run_steps(8);
-        assert!(!h.state().views[0].auto_scrolling(), "custom scrolling must be Linux-only: organize={organize}");
+        assert!(!h.state().views[0].auto_scrolling(), "a click does not latch auto-scroll outside Linux: organize={organize}");
+        assert!(!h.state().views[0].middle_panning(), "a released click leaves nothing to pan: organize={organize}");
     }
+    // A drag pans while the button is held, and the Crop tool never sees it.
+    let (mut h, c) = harness();
+    h.state_mut().set_option("zoom", "400").unwrap();
+    h.run_steps(3);
+    h.state_mut().views[0].go_to_page(1);
+    h.run_steps(2);
+    h.state_mut().quick_tool = pdfcraft_ui_egui::QuickTool::Crop;
+    let p = h.state().views[0].viewport_rect().center();
+    let top = h.state().views[0].page_screen_rect(1).unwrap().top();
+    ok(&mut h, &c, "ui.drag", json!({ "from": [p.x, p.y], "to": [p.x, p.y - 60.0], "steps": 12, "button": "middle" }));
+    h.run_steps(2);
+    let moved = h.state().views[0].page_screen_rect(1).unwrap().top();
+    assert!((moved - (top - 60.0)).abs() < 1.0, "the page follows the pointer 1:1: {top} -> {moved}");
+    h.run_steps(8);
+    assert_eq!(h.state().views[0].page_screen_rect(1).unwrap().top(), moved, "no drift after release");
+    assert!(h.state().views[0].crop_drag.is_none(), "the Crop tool must not receive a wheel drag");
+    assert!(!h.state().session.get(h.state().views[0].id).unwrap().dirty);
 }
 
 #[test]
@@ -534,6 +552,38 @@ fn german_preferences_and_search_keep_command_ids() {
 }
 
 #[test]
+fn ukrainian_preferences_and_search_keep_command_ids() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": "uk" }));
+    ok(&mut h, &c, "ui.command", json!({ "id": "app.preferences" }));
+    for label in ["Мова інтерфейсу", "Українська"] {
+        let found = ok(&mut h, &c, "ui.inspect", json!({ "query": label }));
+        assert!(found["count"].as_u64().unwrap() > 0, "{label}: {found}");
+    }
+    ok(&mut h, &c, "ui.click", json!({ "label": "OK" }));
+    for query in ["Розділити", "Split document", "page.split"] {
+        ok(&mut h, &c, "ui.command", json!({ "id": "view.palette" }));
+        ok(&mut h, &c, "ui.type", json!({ "text": query }));
+        let hits = ok(&mut h, &c, "ui.inspect", json!({ "query": "Розділити документ…" }));
+        assert!(hits["count"].as_u64().unwrap() > 0, "{query}: {hits}");
+        ok(&mut h, &c, "ui.key", json!({ "key": "Escape" }));
+        h.state_mut().palette_query.clear();
+    }
+    for (dialog, label) in [("properties", "Властивості документа"), ("protect", "Захистити паролем"), ("about", "Учасники")]
+    {
+        ok(&mut h, &c, "ui.set", json!({ "key": "dialog", "value": dialog }));
+        let found = ok(&mut h, &c, "ui.inspect", json!({ "query": label }));
+        assert!(found["count"].as_u64().unwrap() > 0, "{dialog}: {found}");
+    }
+    ok(&mut h, &c, "ui.set", json!({ "key": "dialog", "value": "none" }));
+    assert!(!h.state_mut().apply_edit(pdfcraft_engine::Edit::DeletePages { pages: vec![0, 1, 2, 3, 4] }));
+    let state = ok(&mut h, &c, "ui.state", json!({}));
+    assert_eq!(state["language"], "uk");
+    assert_eq!(state["notice"], "Помилка «Видалити сторінки»: a document must keep at least one page");
+    assert_eq!(state["documents"][0]["name"], "doc.pdf");
+}
+
+#[test]
 fn preferences_menu_and_shortcut_allow_switching_interface_languages() {
     let (mut h, c) = harness();
     ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": "ja" }));
@@ -542,7 +592,8 @@ fn preferences_menu_and_shortcut_allow_switching_interface_languages() {
     let menu = ok(&mut h, &c, "ui.inspect", json!({ "query": "環境設定…" }));
     let prefs = menu["widgets"].as_array().unwrap().iter().find(|w| w["clickable"] == true).expect("Preferences menu item");
     ok(&mut h, &c, "ui.click", json!({ "id": prefs["id"] }));
-    for (current, next, code) in [("日本語", "English", "en"), ("English", "日本語", "ja")] {
+    for (current, next, code) in [("日本語", "English", "en"), ("English", "Українська", "uk"), ("Українська", "日本語", "ja")]
+    {
         let selector = ok(&mut h, &c, "ui.inspect", json!({ "query": current }));
         let combo = selector["widgets"].as_array().unwrap().iter().find(|w| w["role"] == "ComboBox").expect("language selector");
         ok(&mut h, &c, "ui.click", json!({ "id": combo["id"] }));
