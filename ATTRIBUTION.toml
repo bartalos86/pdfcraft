@@ -140,7 +140,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Japanese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "b87a5bf6e1a7ff021f82002d1e1f6a2a93225f94a88e6c9b44318f874691c95d"
+sha256 = "ee4495e3b3a4a22f917b0450126687f23c8c299834a8b3ce6daf0ca2153d6730"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/uk.tsv"
