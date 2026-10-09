@@ -705,12 +705,21 @@ fn swapped_around_center(r: [f64; 4]) -> Option<[f64; 4]> {
 pub fn set_props(doc: &mut Document, name: &str, props: &FieldProps) -> Result<String, FormError> {
     let all = fields(doc);
     let f = all.iter().find(|f| f.name == name).ok_or_else(|| FormError::NoSuchField(name.into()))?.clone();
+    // Validated before anything is written, so a refused rotation leaves the document unchanged.
+    // `Some(Some(rect))`: the widget's axis changes and it gets the swapped rectangle.
+    let mut rotated_rect: Option<Option<[f64; 4]>> = None;
     if let Some((wi, rot)) = props.rotation {
         if !matches!(rot, 0 | 90 | 180 | 270) {
             return invalid("rotation must be 0, 90, 180 or 270 degrees");
         }
-        if f.widgets.get(wi).is_none() {
-            return invalid(format!("{name} has no widget {}", wi + 1));
+        let Some(w) = f.widgets.get(wi) else {
+            return invalid(format!("{name} has no widget {}", wi.saturating_add(1)));
+        };
+        let axis_change = (w.rotation % 180 == 0) != (rot % 180 == 0);
+        rotated_rect = Some(None);
+        if axis_change && props.rect.is_none() {
+            let Some(rect) = swapped_around_center(w.rect) else { return invalid("the field is too small") };
+            rotated_rect = Some(Some(rect));
         }
     }
     // A locked field only takes unlocking (Acrobat greys its properties out).
@@ -972,11 +981,10 @@ pub fn set_props(doc: &mut Document, name: &str, props: &FieldProps) -> Result<S
             }
         }
     }
-    if let Some((wi, rot)) = props.rotation {
-        let w = &f.widgets[wi];
-        let axis_change = (w.rotation % 180 == 0) != (rot % 180 == 0);
-        if axis_change && props.rect.is_none() {
-            let Some(rect) = swapped_around_center(w.rect) else { return invalid("the field is too small") };
+    if let (Some((wi, rot)), Some(swapped)) = (props.rotation, rotated_rect)
+        && let Some(w) = f.widgets.get(wi)
+    {
+        if let Some(rect) = swapped {
             doc.update_dict(w.obj, |d| d.set(b"Rect".to_vec(), Object::Array(rect.iter().map(|v| Object::Real(*v)).collect())))?;
         }
         let mut mk = doc.get(w.obj).as_dict().and_then(|d| d.get(b"MK").map(|m| doc.resolve(m).as_dict().cloned())).flatten().unwrap_or_default();
