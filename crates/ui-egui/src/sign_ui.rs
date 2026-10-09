@@ -157,7 +157,8 @@ pub(crate) fn page_input(ui: &egui::Ui, resp: &egui::Response, xf: &PageXform, p
     }
 }
 
-/// Where new digital IDs are saved: next to the recovery folder (`…/PdfCraft/Digital IDs`).
+/// Where new digital IDs are saved: next to the recovery folder (`…/PdfCraft/Digital IDs`, or
+/// `PdfCraftData/Digital IDs` in portable mode).
 fn id_dir() -> Option<PathBuf> {
     crate::recovery::RecoveryStore::default_dir().and_then(|d| d.parent().map(|p| p.join("Digital IDs")))
 }
@@ -1043,7 +1044,7 @@ pub(crate) fn cert_viewer(ui: &mut egui::Ui, v: &mut CertViewer, trusted: &[Cert
             let grid = |ui: &mut egui::Ui, rows: Vec<(&str, String)>| {
                 egui::Grid::new(("cert-rows", v.tab as u8)).num_columns(2).spacing([12.0, 5.0]).show(ui, |ui| {
                     for (k, val) in rows {
-                        ui.label(egui::RichText::new(tl!(k)).color(t.text_muted));
+                        ui.label(egui::RichText::new(tl_ctx!("certificate", k)).color(t.text_muted));
                         ui.add(egui::Label::new(val).wrap());
                         ui.end_row();
                     }

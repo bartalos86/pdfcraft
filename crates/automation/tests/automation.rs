@@ -1289,6 +1289,20 @@ fn editing_existing_text_through_tools() {
 }
 
 #[test]
+fn paragraph_bold_without_font_keeps_the_source_family() {
+    let dir = workdir("paragraph-bold");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({ "path": "a.pdf" }))["doc"].as_u64().unwrap();
+    ok(&mut a, "text_edit", json!({ "doc": doc, "page": 2, "paragraph": 1, "font": "times" }));
+    let bold = ok(&mut a, "text_edit", json!({ "doc": doc, "page": 2, "paragraph": 1, "bold": true }));
+    assert_eq!(bold["paragraph"]["font"], "Times-Bold");
+    let regular = ok(&mut a, "text_edit", json!({ "doc": doc, "page": 2, "paragraph": 1, "bold": false }));
+    assert_eq!(regular["paragraph"]["font"], "Times-Roman");
+    assert_eq!(regular["paragraph"]["text"], "Page 2");
+    assert!(matches!(a.call("text_edit", &json!({ "doc": doc, "page": 2, "paragraph": 1, "bold": "yes" })), Err(ToolError::InvalidArgs(_))));
+}
+
+#[test]
 fn editing_page_images_through_tools() {
     let dir = workdir("page-images");
     let mut a = auto(&dir);
@@ -1433,6 +1447,70 @@ fn image_signatures_through_tools_preserve_transparency_and_survive_save() {
 }
 
 #[test]
+fn image_signature_preview_layers_are_read_only_and_survive_encrypted_save() {
+    let dir = workdir("signature-preview");
+    let mut png = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png, 120, 40);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let rgba: Vec<u8> = (0..40)
+            .flat_map(|y| (0..120).flat_map(move |x| if (40..80).contains(&x) && (10..30).contains(&y) { [20, 40, 60, 128] } else { [0, 0, 0, 0] }))
+            .collect();
+        encoder.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    std::fs::write(dir.join("signature.png"), png).unwrap();
+    std::fs::write(dir.join("form.pdf"), fixture(1)).unwrap();
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({ "path": "form.pdf" }))["doc"].as_u64().unwrap();
+    ok(&mut a, "page_rotate", json!({ "doc": doc, "pages": [1], "degrees": 90 }));
+    ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": 1, "type": "initials", "at": [20, 40], "path": "signature.png" }));
+    let background = a.call("page_render", &json!({ "doc": doc, "page": 1, "dpi": 72 })).unwrap();
+    let Content::Png { data: expected, .. } = &background[0] else { panic!() };
+    let expected = image::load_from_memory(expected).unwrap().to_rgba8();
+    ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": 1, "type": "signature", "at": [120, 100], "path": "signature.png" }));
+    ok(&mut a, "comment_edit", json!({ "doc": doc, "page": 1, "index": 2, "opacity": 0.5 }));
+    ok(&mut a, "doc_protect", json!({ "doc": doc, "open_password": "preview-test" }));
+    ok(&mut a, "doc_save", json!({ "doc": doc, "path": "signed.pdf" }));
+    let reopened = ok(&mut a, "doc_open", json!({ "path": "signed.pdf", "password": "preview-test" }))["doc"].as_u64().unwrap();
+    for doc in [doc, reopened] {
+        let before = ok(&mut a, "doc_info", json!({ "doc": doc }));
+        let d = a.session().docs().iter().find(|d| d.id.0 == doc).unwrap();
+        let generation = d.edit_generation();
+        let bytes = d.bytes.clone();
+        let output = a.call("comment_image_preview", &json!({ "doc": doc, "page": 1, "index": 2, "dpi": 72 })).unwrap();
+        let [Content::Json(meta), Content::Png { data: background, .. }] = output.as_slice() else { panic!("labeled background layer") };
+        let image = a.call("comment_image_preview", &json!({ "doc": doc, "page": 1, "index": 2, "layer": "image" })).unwrap();
+        let [Content::Json(image_meta), Content::Png { data: signature, width, height }] = image.as_slice() else { panic!("labeled image layer") };
+        assert_eq!(meta["layer"], "background");
+        assert_eq!(image_meta["layer"], "image");
+        assert_eq!(meta["rotation"], 90);
+        assert_eq!(meta["image_rotation"], 0, "placed upright as displayed on the turned page");
+        assert_eq!(meta["opacity"], 0.5);
+        assert_eq!((*width, *height), (120, 40));
+        assert_eq!(image::load_from_memory(background).unwrap().to_rgba8(), expected, "page text and the other signature remain");
+        let signature = image::load_from_memory(signature).unwrap().to_rgba8();
+        assert_eq!(signature.get_pixel(5, 20).0[3], 0);
+        assert_eq!(signature.get_pixel(60, 20).0, [20, 40, 60, 128], "embedded alpha and colour survive reopen");
+        assert_eq!(ok(&mut a, "doc_info", json!({ "doc": doc })), before);
+        let d = a.session().docs().iter().find(|d| d.id.0 == doc).unwrap();
+        assert_eq!(d.edit_generation(), generation);
+        assert!(std::sync::Arc::ptr_eq(&bytes, &d.bytes));
+        assert!(d.image_signature_preview(0, 1).unwrap().unwrap().render_background(f32::NAN).is_err());
+        assert!(d.image_signature_preview(0, 999).is_err());
+    }
+    assert!(tools().iter().find(|t| t.name == "comment_image_preview").unwrap().read_only);
+    for dpi in [0, 601] {
+        assert!(matches!(
+            a.call("comment_image_preview", &json!({ "doc": reopened, "page": 1, "index": 2, "dpi": dpi })),
+            Err(ToolError::InvalidArgs(_))
+        ));
+    }
+    ok(&mut a, "fill_sign_add", json!({ "doc": reopened, "page": 1, "type": "check", "at": [10, 10] }));
+    assert!(a.call("comment_image_preview", &json!({ "doc": reopened, "page": 1, "index": 3 })).is_err());
+}
+
+#[test]
 fn creating_and_reducing_through_tools() {
     let dir = workdir("create");
     std::fs::write(dir.join("notes.txt"), "Meeting notes\nAction items").unwrap();
@@ -1445,6 +1523,62 @@ fn creating_and_reducing_through_tools() {
     let r = ok(&mut a, "doc_reduce", json!({ "doc": t, "path": "notes-small.pdf" }));
     assert!(r["bytes_after"].as_u64().unwrap() > 0 && dir.join("notes-small.pdf").exists());
     assert!(matches!(a.call("doc_create", &json!({ "from": "images", "paths": ["notes.txt"] })), Err(ToolError::Failed(_))));
+}
+
+#[test]
+fn creating_from_multiple_files_through_tools() {
+    let dir = workdir("create-multiple");
+    let mut png = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut png, 4, 2);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&[100; 4 * 2 * 3]).unwrap();
+    }
+    std::fs::write(dir.join("scan.png"), png).unwrap();
+    std::fs::write(dir.join("notes.txt"), "hello").unwrap();
+    std::fs::write(dir.join("report.docx"), b"PK\x03\x04").unwrap();
+    let mut a = auto(&dir);
+
+    // Combine: every file converted, in the order given, with a bookmark per file.
+    let made = ok(
+        &mut a,
+        "doc_create_multiple",
+        json!({ "paths": ["notes.txt", "a.pdf", "scan.png"], "pages": [null, "3", null], "out": "all.pdf", "open": true }),
+    );
+    let doc = made["document"]["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, doc), ["hello", "Page 3", ""]);
+    let titles: Vec<String> = ok(&mut a, "bookmark_list", json!({ "doc": doc }))["bookmarks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["title"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(titles, ["notes", "a", "scan"]);
+    assert!(dir.join("all.pdf").is_file());
+    // A file that can't be converted fails the whole combine, naming it.
+    let err = a.call("doc_create_multiple", &json!({ "paths": ["a.pdf", "report.docx"] })).unwrap_err();
+    assert!(matches!(&err, ToolError::Failed(m) if m.contains("report.docx") && m.contains("can't be converted")), "{err}");
+    assert!(matches!(a.call("doc_create_multiple", &json!({ "paths": [] })), Err(ToolError::InvalidArgs(_))));
+    assert!(matches!(a.call("doc_create_multiple", &json!({ "paths": ["a.pdf"], "mode": "zip" })), Err(ToolError::InvalidArgs(_))));
+    assert!(matches!(a.call("doc_create_multiple", &json!({ "paths": ["a.pdf"], "mode": "separate" })), Err(ToolError::InvalidArgs(_))));
+
+    // Separate: one PDF per file; PDFs are skipped, a bad file doesn't stop the rest, and an
+    // existing file is never overwritten.
+    std::fs::create_dir_all(dir.join("out")).unwrap();
+    std::fs::write(dir.join("out/notes.pdf"), b"mine").unwrap();
+    let args = json!({ "paths": ["notes.txt", "report.docx", "a.pdf", "scan.png", "missing.txt"], "mode": "separate", "out_dir": "out" });
+    let made = ok(&mut a, "doc_create_multiple", args);
+    let files = made["files"].as_array().unwrap();
+    assert!(files[0]["output"].as_str().unwrap().ends_with("notes (2).pdf"), "{files:?}");
+    assert!(files[1]["error"].as_str().unwrap().contains("can't be converted"));
+    assert_eq!(files[2]["skipped"], "already a PDF");
+    assert!(files[3]["output"].as_str().unwrap().ends_with("scan.pdf"));
+    assert!(files[4]["error"].is_string());
+    assert_eq!(std::fs::read(dir.join("out/notes.pdf")).unwrap(), b"mine");
+    let reopened = ok(&mut a, "doc_open", json!({ "path": "out/notes (2).pdf" }))["doc"].as_u64().unwrap();
+    assert_eq!(page_text(&mut a, reopened), ["hello"]);
+    assert!(!dir.join("out/a.pdf").exists());
 }
 
 #[test]
@@ -1562,6 +1696,34 @@ fn preparing_a_form_through_tools() {
     assert_ne!(before, after, "the picture is drawn");
     assert_eq!(ok(&mut a, "edit_undo", json!({ "doc": doc }))["undone"], "Set the image of Image1");
     assert!(matches!(a.call("form_set_image", &json!({ "doc": doc, "field": "size", "path": "pics/a_page_1.png" })), Err(ToolError::Failed(_))));
+}
+
+#[test]
+fn rotating_a_field_through_tools() {
+    let dir = workdir("rotate-field");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({ "path": "a.pdf" }))["doc"].as_u64().unwrap();
+    ok(&mut a, "form_add_field", json!({ "doc": doc, "page": 1, "type": "text", "rect": [20, 20, 180, 42], "name": "City" }));
+    let rect_of = |a: &mut Automation| {
+        let f = &ok(a, "form_fields", json!({ "doc": doc }))["fields"][0];
+        (f["rotation"].as_i64().unwrap(), f["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>())
+    };
+    let (rot, before) = rect_of(&mut a);
+    assert_eq!(rot, 0);
+    assert!(matches!(a.call("form_set_props", &json!({ "doc": doc, "field": "City", "rotation": 45 })), Err(ToolError::InvalidArgs(_))));
+    assert_eq!(rect_of(&mut a).1, before, "a rejected rotation changes nothing");
+    ok(&mut a, "form_set_props", json!({ "doc": doc, "field": "City", "rotation": 90 }));
+    let (rot, turned) = rect_of(&mut a);
+    assert_eq!(rot, 90);
+    let (bw, bh) = (before[2] - before[0], before[3] - before[1]);
+    let (tw, th) = (turned[2] - turned[0], turned[3] - turned[1]);
+    assert!((tw - bh).abs() < 0.2 && (th - bw).abs() < 0.2, "swapped {before:?} -> {turned:?}");
+    let center = |r: &[f64]| ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
+    let (bc, tc) = (center(&before), center(&turned));
+    assert!((bc.0 - tc.0).abs() < 0.2 && (bc.1 - tc.1).abs() < 0.2, "center moved {bc:?} -> {tc:?}");
+    assert_eq!(ok(&mut a, "edit_undo", json!({ "doc": doc }))["undone"], "Change field properties");
+    let (rot, back) = rect_of(&mut a);
+    assert_eq!((rot, back), (0, before));
 }
 
 #[test]
@@ -1750,6 +1912,47 @@ fn comments_and_form_data_travel_as_xfdf_fdf_and_text() {
 }
 
 #[test]
+fn natural_image_stamps_through_tools_on_rotated_pages() {
+    for degrees in [0, 90, 180, 270] {
+        let dir = workdir(&format!("natural-stamps-{degrees}"));
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 80, 40);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let pixels: Vec<u8> = (0..40)
+                .flat_map(|y| {
+                    (0..80).flat_map(move |x| {
+                        [[240, 20, 20], [20, 180, 20], [20, 20, 240], [230, 180, 20]][usize::from(y >= 20) * 2 + usize::from(x >= 40)]
+                    })
+                })
+                .collect();
+            encoder.write_header().unwrap().write_image_data(&pixels).unwrap();
+        }
+        std::fs::write(dir.join("quadrants.png"), bytes).unwrap();
+        let mut a = auto(&dir);
+        let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+        ok(&mut a, "page_rotate", json!({"doc":doc,"pages":[1],"degrees":degrees}));
+        ok(&mut a, "stamp_custom", json!({"doc":doc,"page":1,"path":"quadrants.png","at":[100,100]}));
+        let rendered = a.call("page_render", &json!({"doc":doc,"page":1,"dpi":72})).unwrap();
+        let Content::Png { data, .. } = &rendered[0] else { panic!("expected PNG") };
+        let mut reader = png::Decoder::new(std::io::Cursor::new(data)).read_info().unwrap();
+        let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+        let info = reader.next_frame(&mut pixels).unwrap();
+        assert_eq!(info.color_type, png::ColorType::Rgba);
+        for ((x, y), colour) in [(80, 90), (120, 90), (80, 110), (120, 110)].into_iter().zip([
+            [240, 20, 20, 255],
+            [20, 180, 20, 255],
+            [20, 20, 240, 255],
+            [230, 180, 20, 255],
+        ]) {
+            let offset = ((y * info.width + x) * 4) as usize;
+            assert_eq!(&pixels[offset..offset + 4], &colour, "page rotation {degrees}");
+        }
+    }
+}
+
+#[test]
 fn stamps_through_tools() {
     let dir = workdir("stamps");
     let mut a = auto(&dir);
@@ -1907,6 +2110,112 @@ fn note_icons_anchor_at_the_requested_corner_on_rotated_pages() {
     }
 }
 
+/// An image signature is drawn upright as displayed, and anchored at the displayed point asked
+/// for, on every `/Rotate`: its picture is placed in user space, which the page turns, so the
+/// appearance is counter-rotated and its box is found in user space.
+#[test]
+fn image_signatures_stay_upright_on_rotated_pages() {
+    let dir = workdir("image-upright");
+    // 80 x 40 px, one colour per quadrant: red and green above, blue and yellow below.
+    let quadrants = image::RgbaImage::from_fn(80, 40, |x, y| match (x < 40, y < 20) {
+        (true, true) => image::Rgba([255, 0, 0, 255]),
+        (false, true) => image::Rgba([0, 255, 0, 255]),
+        (true, false) => image::Rgba([0, 0, 255, 255]),
+        (false, false) => image::Rgba([255, 255, 0, 255]),
+    });
+    quadrants.save(dir.join("quadrants.png")).unwrap();
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_create", json!({ "from": "blank", "width": 200, "height": 300, "pages": 4 }))["doc"].as_u64().unwrap();
+    for (page, degrees) in [(2, 90), (3, 180), (4, 270)] {
+        ok(&mut a, "page_rotate", json!({ "doc": doc, "pages": [page], "degrees": degrees }));
+    }
+    for page in 1..=4 {
+        // 64 x 32 pt from x = 60 as displayed, centred on y = 140.
+        ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": page, "type": "signature", "at": [60, 140], "path": "quadrants.png" }));
+    }
+    let (white, red, green, blue, yellow) = ([255, 255, 255], [255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0]);
+    let check = |a: &mut Automation, doc: u64| {
+        for page in 1..=4 {
+            let output = a.call("page_render", &json!({ "doc": doc, "page": page, "dpi": 72 })).unwrap();
+            let Content::Png { data, .. } = &output[0] else { panic!() };
+            let pixels = image::load_from_memory(data).unwrap().to_rgba8();
+            for (x, y, want, what) in [
+                (76, 132, red, "signature top-left"),
+                (108, 132, green, "signature top-right"),
+                (76, 148, blue, "signature bottom-left"),
+                (108, 148, yellow, "signature bottom-right"),
+                (56, 140, white, "left of the signature"),
+                (128, 140, white, "right of the signature"),
+                (92, 120, white, "above the signature"),
+                (92, 160, white, "below the signature"),
+            ] {
+                let got = pixels.get_pixel(x, y).0;
+                assert!(got[..3].iter().zip(want).all(|(g, w)| g.abs_diff(w) < 12), "page {page}, {what} at ({x}, {y}): {got:?}, want {want:?}");
+            }
+        }
+    };
+    check(&mut a, doc);
+    ok(&mut a, "doc_save", json!({ "doc": doc, "path": "placed.pdf" }));
+    let reopened = ok(&mut a, "doc_open", json!({ "path": "placed.pdf" }))["doc"].as_u64().unwrap();
+    check(&mut a, reopened);
+}
+
+/// Issue #299: a typed signature and initials read across, as displayed, on every `/Rotate`,
+/// anchored at the displayed point, and look the same as on an unturned page.
+#[test]
+fn typed_signatures_stay_upright_on_rotated_pages() {
+    let dir = workdir("typed-upright");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_create", json!({ "from": "blank", "width": 200, "height": 300, "pages": 4 }))["doc"].as_u64().unwrap();
+    for (page, degrees) in [(2, 90), (3, 180), (4, 270)] {
+        ok(&mut a, "page_rotate", json!({ "doc": doc, "pages": [page], "degrees": degrees }));
+    }
+    for page in 1..=4 {
+        ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": page, "type": "signature", "at": [30, 60], "text": "Ada Lovelace" }));
+        ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": page, "type": "initials", "at": [30, 140], "text": "AL" }));
+    }
+    let check = |a: &mut Automation, doc: u64| {
+        let mut upright = Vec::new();
+        for page in 1..=4 {
+            let output = a.call("page_render", &json!({ "doc": doc, "page": page, "dpi": 72 })).unwrap();
+            let Content::Png { data, .. } = &output[0] else { panic!() };
+            let pixels = image::load_from_memory(data).unwrap().to_rgba8();
+            assert_eq!(pixels.dimensions(), if page % 2 == 1 { (200, 300) } else { (300, 200) }, "page {page}");
+            let dark: Vec<bool> = pixels.pixels().map(|p| p.0[..3].iter().all(|v| *v < 128)).collect();
+            for y in [60, 140] {
+                let mut b = [u32::MAX, u32::MAX, 0, 0];
+                for (x, py, p) in pixels.enumerate_pixels() {
+                    if py.abs_diff(y) < 40 && p.0[..3].iter().all(|v| *v < 128) {
+                        b = [b[0].min(x), b[1].min(py), b[2].max(x), b[3].max(py)];
+                    }
+                }
+                assert!(b[0] <= b[2], "page {page}: no ink near y = {y}");
+                assert!(b[2] - b[0] > b[3] - b[1], "page {page}: the name reads across: {b:?}");
+                assert!(b[0].abs_diff(30) <= 2 && b[1] < y && b[3] > y, "page {page}: anchored at (30, {y}): {b:?}");
+            }
+            if page == 1 {
+                upright = dark;
+                continue;
+            }
+            // Same pixels as the unturned page where both pages are (pages 2 and 4 are wider).
+            let width = pixels.width();
+            let (mut differ, mut ink) = (0, 0);
+            for y in 0..200 {
+                for x in 0..200 {
+                    let (want, got) = (upright[(y * 200 + x) as usize], dark[(y * width + x) as usize]);
+                    ink += usize::from(want);
+                    differ += usize::from(want != got);
+                }
+            }
+            assert!(differ * 10 < ink, "page {page}: {differ} of {ink} ink pixels differ from the unturned page");
+        }
+    };
+    check(&mut a, doc);
+    ok(&mut a, "doc_save", json!({ "doc": doc, "path": "placed.pdf" }));
+    let reopened = ok(&mut a, "doc_open", json!({ "path": "placed.pdf" }))["doc"].as_u64().unwrap();
+    check(&mut a, reopened);
+}
+
 #[test]
 fn comment_checkmarks_locks_hiding_and_summaries_through_tools() {
     let dir = workdir("comment-polish");
@@ -1936,6 +2245,72 @@ fn comment_checkmarks_locks_hiding_and_summaries_through_tools() {
     let found = ok(&mut a, "text_find", json!({ "doc": text, "query": "Sticky" }));
     assert!(found["count"].as_u64().unwrap() >= 1, "{found}");
     assert!(matches!(a.call("comments_summarize", &json!({ "doc": doc, "sort": "colour" })), Err(ToolError::InvalidArgs(_))));
+}
+
+#[test]
+fn line_endings_through_the_tool() {
+    let dir = workdir("endings");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({ "path": "a.pdf" }))["doc"].as_u64().unwrap();
+    ok(&mut a, "comment_add", json!({ "doc": doc, "page": 1, "type": "line", "from": [20, 40], "to": [120, 80], "endings": ["None", "Diamond"] }));
+    ok(
+        &mut a,
+        "comment_add",
+        json!({ "doc": doc, "page": 1, "type": "polyline", "points": [[20, 120], [60, 100], [100, 140]], "endings": ["Circle", "Slash"] }),
+    );
+    ok(
+        &mut a,
+        "comment_add",
+        json!({ "doc": doc, "page": 1, "type": "callout", "rect": [110, 200, 190, 240], "to": [40, 160], "contents": "Look", "endings": ["Square"] }),
+    );
+    assert!(matches!(
+        a.call("comment_add", &json!({ "doc": doc, "page": 1, "type": "line", "from": [20, 40], "to": [120, 80], "endings": ["Sparkle", "None"] })),
+        Err(ToolError::InvalidArgs(_))
+    ));
+    assert!(matches!(
+        a.call(
+            "comment_add",
+            &json!({ "doc": doc, "page": 1, "type": "callout", "rect": [10, 10, 80, 40], "to": [90, 80], "endings": ["None", "None"] })
+        ),
+        Err(ToolError::InvalidArgs(_))
+    ));
+    assert!(matches!(
+        a.call("comment_add", &json!({ "doc": doc, "page": 1, "type": "rectangle", "rect": [10, 10, 40, 40], "endings": ["Circle"] })),
+        Err(ToolError::InvalidArgs(_))
+    ));
+    ok(&mut a, "doc_save", json!({ "doc": doc, "path": "ended.pdf" }));
+    let saved = pdfcraft_cos::Document::open(std::sync::Arc::new(std::fs::read(dir.join("ended.pdf")).unwrap())).unwrap();
+    for name in [b"Diamond".as_slice(), b"Circle", b"Slash", b"Square"] {
+        assert!(
+            saved.object_numbers().iter().any(|n| saved.try_get(*n).ok().is_some_and(|o| object_has_name(&o, name))),
+            "missing /{}",
+            String::from_utf8_lossy(name)
+        );
+    }
+    let drawn: Vec<String> = saved
+        .object_numbers()
+        .into_iter()
+        .filter_map(|n| {
+            let obj = saved.try_get(n).ok()?;
+            let pdfcraft_cos::Object::Stream(s) = &*obj else { return None };
+            if s.dict.name(b"Subtype") != Some(b"Form") {
+                return None;
+            }
+            s.decoded().ok().map(|b| String::from_utf8_lossy(&b).into_owned())
+        })
+        .collect();
+    assert!(drawn.iter().any(|s| s.contains("h B")), "a filled ending was drawn: {drawn:?}");
+    assert!(drawn.iter().any(|s| s.contains(" l S")), "an open ending was drawn: {drawn:?}");
+}
+
+fn object_has_name(obj: &pdfcraft_cos::Object, name: &[u8]) -> bool {
+    match obj {
+        pdfcraft_cos::Object::Name(n) => n.as_slice() == name,
+        pdfcraft_cos::Object::Array(items) => items.iter().any(|o| object_has_name(o, name)),
+        pdfcraft_cos::Object::Dict(d) => d.iter().any(|(_, o)| object_has_name(o, name)),
+        pdfcraft_cos::Object::Stream(s) => s.dict.iter().any(|(_, o)| object_has_name(o, name)),
+        _ => false,
+    }
 }
 
 #[test]
