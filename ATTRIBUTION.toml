@@ -19,7 +19,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Simplified Chinese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "3143cb12607260cfa9bfced16c16193f21067911872e52774d31aa7db8e92539"
+sha256 = "844da6ed41f9baf939e1a99042dec5904447ca82fb5662c4361a9a809adb19f8"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/zh-hant.tsv"
@@ -30,7 +30,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Traditional Chinese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "6175a32cc9c970a374cc499b7b04f88e2b7fe166f2b92098446cc088d83a03cb"
+sha256 = "e049f7df877d07137465cbe7ead240c9cd60daaaeb298f4877eb58974c728004"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/cs.tsv"
@@ -41,7 +41,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Czech UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "2c09a121e493fb123d9f886529f62268119ca580ad5d5300eca61d4a39216827"
+sha256 = "8bab483a3f5ba3a724365c2a5a892291a10f41fdc443eaceb66f49c8a20cae20"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/pt-br.tsv"
@@ -52,7 +52,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Brazilian Portuguese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "0ccf62e34424981d5980eeaee8799db2653a4c186807df143326ef9881959006"
+sha256 = "2cd5dcc6cf7e94914b955ee0f2f5c3e8951b16e26ab49fcb7111246a6e31ee2a"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/es.tsv"
@@ -63,7 +63,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Spanish UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "6615e2950dd34adcd0b258c6488e083e89a3596e06afd905a1bd61e7c24a5bdd"
+sha256 = "f47c19dcf7272068dc8b46a37eb692948f5571737f6c1c82e8282f1b7d64458d"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/fr.tsv"
@@ -74,7 +74,18 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "French UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "d053efdc8c4289308a12bfdd4a2499281f48a3583323ca2a0f4e4650fea6d130"
+sha256 = "8fd69fd5e769259b99b059adb3a9d2fb90489bf561d62113ff8d25227495e122"
+
+[[asset]]
+path = "crates/ui-egui/src/i18n/de.tsv"
+title = "German interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "German UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "8b380ba241bc25a05289717a3bfa4ea580be1c78b43c91d54c72de9c024b06eb"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/te.tsv"
@@ -85,7 +96,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Telugu UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "e8b96edd718a1cd212b7440c4ab100f2555c97dccb0cda289bdb1775d5f3aa61"
+sha256 = "d3630f989e9725c22444dc27765142674b66f72436502ca969b2851fc38d703d"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/ru.tsv"
@@ -96,7 +107,29 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Russian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "5c324eee0fd629c9d5b74de3ccd8a23bbbfbe96e95fb6c42bf54150c0b020063"
+sha256 = "ab089d2dab457a727158c3414dbe28b4edc3231cd30b5092feeeed3d8feca8a5"
+
+[[asset]]
+path = "crates/ui-egui/src/i18n/hu.tsv"
+title = "Hungarian interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Hungarian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "59ec12395bc45ed15a0de3b2d0878d2ea250bfd9e9372103d8869b142bcc675f"
+
+[[asset]]
+path = "crates/ui-egui/src/i18n/bg.tsv"
+title = "Bulgarian interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Bulgarian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "ca7c441f30dc116349f0aa523e8a6cfc8e019bf7ff73f377f0264f9dcda9f133"
 
 [[asset]]
 path = "crates/ui-egui/src/i18n/ja.tsv"
@@ -107,7 +140,18 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Japanese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
-sha256 = "97dfb1447c2f42cd9164c0c13cb8ba9ec02326bda77b42395c2545ad680b59f2"
+sha256 = "cba0c2ca8989a28aa41056b98eb1c8019e3a13e882ead246ea1d69f82c44e087"
+
+[[asset]]
+path = "crates/ui-egui/src/i18n/uk.tsv"
+title = "Ukrainian interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Ukrainian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "bdb59f15d5659bd54fb4316b37f3e50f7c352640aeef1860be87700682d3bb48"
 
 [[asset]]
 path = "assets/icons/accessibility.svg"
@@ -3104,6 +3148,29 @@ licence_file = "assets/fonts/OFL-DancingScript.txt"
 kind = "font"
 usage = "Fill & Sign typed signatures and initials: the typed name's glyph outlines, drawn as filled paths (the font file itself is not embedded in PDFs)"
 sha256 = "21808625578fe8d8cd10cb684be546dca077b27cd03a53a2f1ec11dc743c924c"
+
+[[asset]]
+path = "packaging/macos/dmg/background.svg"
+title = "PdfCraft macOS DMG window background"
+author = "@XusBadia"
+source = "Original work for this repository, derived from the PdfCraft app icon (assets/app-icon/pdfcraft.svg, referenced via an SVG image element, not copied)"
+licence = "MIT OR Apache-2.0"
+licence_file = "assets/app-icon/LICENSE.txt"
+kind = "image"
+usage = "Finder window of the macOS DMG; rendered to background.tiff by packaging/macos/dmg/generate.py"
+sha256 = "e8b9ea9d5e64b7b741c977543c1693825e77d5c4c579eeb674bf5dcd3764cd8a"
+
+
+[[asset]]
+path = "packaging/macos/dmg/background.tiff"
+title = "PdfCraft macOS DMG window background (rendered)"
+author = "@XusBadia"
+source = "Rendered from packaging/macos/dmg/background.svg by packaging/macos/dmg/generate.py"
+licence = "MIT OR Apache-2.0"
+licence_file = "assets/app-icon/LICENSE.txt"
+kind = "image"
+usage = "1x + 2x HiDPI 16-colour palette TIFF copied into the macOS DMG by packaging/macos/package.sh; includes the app icon and the free LittleCMS built-in sRGB profile"
+sha256 = "f46881724a6621f3686a612a79dbdce4f7dbe9e2025610e44c9a094341334c2c"
 
 [[fetched]]
 file = "text-detection.rten"
