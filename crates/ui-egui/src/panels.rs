@@ -917,7 +917,8 @@ fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut crate::DocVie
             let sense = if editable { Sense::click_and_drag() } else { Sense::click() };
             let (rect, resp) = ui.allocate_exact_size(vec2(w + 16.0, h + 16.0), sense);
             rows.push(rect);
-            if resp.drag_started() {
+            // Only the primary button drags pages (the middle button scrolls, the secondary one opens the menu).
+            if resp.drag_started_by(egui::PointerButton::Primary) {
                 if !view.target_pages().contains(&i) {
                     view.click_page(i, egui::Modifiers::NONE, true);
                 }
@@ -1011,6 +1012,11 @@ fn moved_index(p: usize, moving: &[usize], to: usize) -> usize {
 /// pointer, and scrolling near the panel's edges. On release, queue the move.
 fn page_drag(ui: &mut egui::Ui, t: &Tokens, view: &mut crate::DocView, rows: &[Rect], dropped: bool) {
     let Some(mut moving) = view.panel_drag.clone() else { return };
+    // A drag that ended while the panel was closed (or elsewhere) leaves nothing to drop.
+    if !dropped && !ui.input(|i| i.pointer.primary_down()) {
+        view.panel_drag = None;
+        return;
+    }
     let pointer = ui.input(|i| i.pointer.interact_pos());
     let gap = pointer.and_then(|p| panel_gap(rows, p.y));
     if let (Some(gap), Some(first), Some(last)) = (gap, rows.first(), rows.last()) {

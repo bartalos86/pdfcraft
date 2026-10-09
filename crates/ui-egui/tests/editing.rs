@@ -1918,3 +1918,20 @@ fn dragging_pages_panel_thumbnails_reorders_pages() {
     assert_eq!(view.selected.iter().copied().collect::<Vec<_>>(), vec![0], "the moved page stays selected");
     assert!(view.panel_drag.is_none());
 }
+
+#[test]
+fn a_thumbnail_drag_that_ends_off_the_panel_or_outlives_the_pages_is_dropped() {
+    let mut h = harness(4, |app| app.right = Some(pdfcraft_ui_egui::RightPanel::Pages));
+    let before = page_texts(h.state());
+    // A drag left over (the panel closed mid-drag, the button released elsewhere) moves nothing.
+    h.state_mut().views[0].panel_drag = Some(vec![2]);
+    h.run_steps(2);
+    assert!(h.state().views[0].panel_drag.is_none());
+    assert_eq!(page_texts(h.state()), before);
+    // A change to the document drops page indexes taken before it.
+    h.state_mut().views[0].panel_drag = Some(vec![3]);
+    let id = h.state().views[0].id;
+    let info = h.state().session.get(id).unwrap().info.clone();
+    h.state_mut().views[0].document_changed(&info);
+    assert!(h.state().views[0].panel_drag.is_none());
+}
