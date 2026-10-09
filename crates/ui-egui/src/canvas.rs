@@ -23,6 +23,8 @@ const MARGIN: f32 = 28.0;
 const SIDE: f32 = 70.0;
 const THUMB_TAG: u64 = 1 << 63;
 const TEXT_TAG: u64 = 1 << 62;
+/// A page rendered for the organize grid at the size it is drawn there.
+const GRID_TAG: u64 = 1 << 61;
 /// The tag of a raster that is out of date (shown until its replacement arrives).
 const STALE_TAG: u64 = u64::MAX;
 /// Pages whose raster would exceed this many device pixels on a side are drawn in tiles.
@@ -299,25 +301,21 @@ pub struct DocView {
     /// The page to keep in place after a grid zoom, and how far below the top of the grid its
     /// cell was.
     grid_anchor: Option<(usize, f32)>,
-    /// The detail thumbnails were last asked for at (see [`thumb_detail`]).
-    thumb_detail: f32,
+    /// Sharp renders of the pages the grid shows larger than a thumbnail: only those in view,
+    /// at the size drawn (device pixels wide).
+    grid_pages: HashMap<usize, (u32, TextureHandle)>,
 }
 
 /// The page grid's zoom range and the step of its buttons and keys.
 pub const GRID_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.5..=3.0;
 const GRID_ZOOM_STEP: f32 = 1.25;
-/// The most memory one document's thumbnails may take.
-const THUMB_BUDGET: f32 = 256.0 * 1024.0 * 1024.0;
+/// How far a sharp grid render may be from the size drawn before it is redone: a pinch changes
+/// the size on every frame, and a slightly soft or slightly large image is fine meanwhile.
+const GRID_SHARP: std::ops::RangeInclusive<f32> = 0.9..=1.6;
 
-/// How much sharper than usual thumbnails are rendered for a grid zoomed to `zoom`: one of a few
-/// steps (so a pinch doesn't re-render on every frame), and less for documents with so many pages
-/// that sharper thumbnails of all of them would not fit [`THUMB_BUDGET`].
-fn thumb_detail(zoom: f32, pages: usize, ppp: f32) -> f32 {
-    let wanted = [1.0, 1.5, 2.0, 3.0].into_iter().find(|d| *d >= zoom).unwrap_or(3.0);
-    // A page of typical proportions (1 : 1.4) at the usual thumbnail width, RGBA.
-    let one = (THUMB_W * ppp).powi(2) * 1.4 * 4.0;
-    let affordable = (THUMB_BUDGET / (one * pages.max(1) as f32)).sqrt();
-    if affordable.is_finite() { wanted.min(affordable).max(1.0) } else { 1.0 }
+/// Whether an image `have` device pixels wide is good enough to draw `want` pixels wide.
+fn sharp_enough(have: u32, want: f32) -> bool {
+    want > 0.0 && GRID_SHARP.contains(&(have as f32 / want))
 }
 
 /// Organize-toolbar actions that need the app (file pickers, new tabs, dialogs).
@@ -418,7 +416,7 @@ impl DocView {
             grid_zoom: 1.0,
             grid_zoom_request: None,
             grid_anchor: None,
-            thumb_detail: 1.0,
+            grid_pages: HashMap::new(),
             comments: Default::default(),
             measure: Default::default(),
             forms: Default::default(),
@@ -512,6 +510,8 @@ impl DocView {
             p.tag = STALE_TAG;
         }
         self.stale_thumbs.extend(self.thumbs.keys().copied());
+        // Pages may have moved: a sharp render of another page would be worse than a soft one.
+        self.grid_pages.clear();
         self.tiles.clear();
         self.texts.clear();
         self.text_failed.clear();
@@ -856,15 +856,9 @@ impl DocView {
         }
     }
 
-    /// The scale to render thumbnails at; when the detail the grid needs changes, the ones
-    /// already made are redone (and stay on screen until then).
-    fn thumb_scale(&mut self, info: &DocInfo, ppp: f32) -> f32 {
-        let detail = thumb_detail(self.grid_zoom, info.pages.len(), ppp);
-        if detail != self.thumb_detail {
-            self.thumb_detail = detail;
-            self.stale_thumbs.extend(self.thumbs.keys().copied());
-        }
-        THUMB_W * detail * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max)
+    /// How many device pixels wide the grid's sharp render of `page` is, if it has one.
+    pub fn grid_page_pixels(&self, page: usize) -> Option<u32> {
+        self.grid_pages.get(&page).map(|(w, _)| *w)
     }
 
     pub fn set_zoom(&mut self, zoom: f32) {
@@ -933,7 +927,10 @@ impl DocView {
                 self.tiles.insert((page, t.x / TILE, t.y / TILE), (r.request.tag, tex));
                 continue;
             }
-            if r.request.tag & THUMB_TAG != 0 {
+            if r.request.tag & GRID_TAG != 0 {
+                let tex = ctx.load_texture(format!("grid-{:?}-{page}", self.id), img, TextureOptions::LINEAR);
+                self.grid_pages.insert(page, (r.width, tex));
+            } else if r.request.tag & THUMB_TAG != 0 {
                 let tex = ctx.load_texture(format!("thumb-{:?}-{page}", self.id), img, TextureOptions::LINEAR);
                 self.thumbs.insert(page, tex);
                 self.stale_thumbs.remove(&page);
@@ -1996,7 +1993,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     }
     queue.extend(text_pages.into_iter().map(|page| RenderRequest { page, kind: RequestKind::Text, tile: None, scale: 1.0, tag: TEXT_TAG }));
     if want_thumbs {
-        let s = view.thumb_scale(info, ppp);
+        let s = THUMB_W * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max);
         for page in 0..info.pages.len() {
             if (!view.thumbs.contains_key(&page) || view.stale_thumbs.contains(&page)) && !view.errors.contains_key(&page) {
                 queue.push(RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG });
@@ -2810,6 +2807,9 @@ fn organize_grid(
     };
     let middle_gesture = view.auto_scroll.blocks_input();
     let mut cells: Vec<(usize, Rect)> = Vec::with_capacity(info.pages.len());
+    // The pages in view that are drawn larger than their thumbnails, and those of them that
+    // need a sharper render than they have.
+    let (mut in_view, mut sharper): (Vec<usize>, Vec<RenderRequest>) = (Vec::new(), Vec::new());
     let mut drop = false;
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if middle_gesture {
@@ -2862,7 +2862,19 @@ fn organize_grid(
                 }
                 ui.painter().rect_filled(pr.translate(vec2(0.0, 1.5)), CornerRadius::same(1), t.page_shadow);
                 ui.painter().rect_filled(pr, CornerRadius::ZERO, Color32::WHITE);
-                if let Some(tex) = view.thumbs.get(&i) {
+                // A page drawn larger than its thumbnail gets a render at the size drawn, while
+                // it is in view; until that arrives the thumbnail stands in.
+                let want = size.x * ppp;
+                let thumb = view.thumbs.get(&i);
+                let thumb_ok = thumb.is_some_and(|t| t.size()[0] as f32 >= want * GRID_SHARP.start());
+                let sharp = view.grid_pages.get(&i).filter(|_| !thumb_ok);
+                if !thumb_ok && ui.is_rect_visible(c) {
+                    in_view.push(i);
+                    if !sharp.is_some_and(|(w, _)| sharp_enough(*w, want)) && !view.errors.contains_key(&i) {
+                        sharper.push(RenderRequest { page: i, kind: RequestKind::Pixels, tile: None, scale: want / p.width.max(1.0), tag: GRID_TAG });
+                    }
+                }
+                if let Some(tex) = sharp.map(|(_, t)| t).or(thumb) {
                     ui.painter().image(tex.id(), pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 }
                 ui.painter().rect_stroke(pr, CornerRadius::ZERO, Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
@@ -2987,11 +2999,14 @@ fn organize_grid(
             ui.ctx().request_repaint();
         }
     }
-    let s = view.thumb_scale(info, ppp);
-    let queue: Vec<RenderRequest> = (0..info.pages.len())
+    // Sharp renders are kept only for the pages in view, so their memory stays small however
+    // long the document is. They come first; the thumbnails of the other pages follow.
+    view.grid_pages.retain(|page, _| in_view.contains(page));
+    let s = THUMB_W * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max);
+    let thumbs = (0..info.pages.len())
         .filter(|p| (!view.thumbs.contains_key(p) || view.stale_thumbs.contains(p)) && !view.errors.contains_key(p))
-        .map(|page| RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG })
-        .collect();
+        .map(|page| RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG });
+    let queue: Vec<RenderRequest> = sharper.into_iter().chain(thumbs).collect();
     if queue != view.last_queue {
         pool.set_queue(queue.clone());
         view.last_queue = queue;
@@ -3007,21 +3022,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn thumbnails_are_sharper_for_a_zoomed_grid_within_a_memory_budget() {
-        // A short document gets the detail its zoom needs, in a few steps.
-        assert_eq!(thumb_detail(0.5, 30, 2.0), 1.0);
-        assert_eq!(thumb_detail(1.0, 30, 2.0), 1.0);
-        assert_eq!(thumb_detail(1.25, 30, 2.0), 1.5);
-        assert_eq!(thumb_detail(3.0, 30, 2.0), 3.0);
-        assert_eq!(thumb_detail(1e9, 30, 2.0), 3.0);
-        // A long one stays within the budget, and never below the usual detail.
-        let long = thumb_detail(3.0, 1500, 2.0);
-        assert!((1.0..3.0).contains(&long), "{long}");
-        assert_eq!(thumb_detail(3.0, 50_000, 2.0), 1.0);
-        for odd in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
-            let d = thumb_detail(odd, 0, odd);
-            assert!((1.0..=3.0).contains(&d), "{odd}: {d}");
-        }
+    fn grid_zoom_is_clamped_and_sharp_renders_tolerate_a_pinch() {
+        assert!(sharp_enough(900, 876.0) && sharp_enough(800, 876.0) && sharp_enough(1300, 876.0));
+        assert!(!sharp_enough(264, 876.0), "a thumbnail stretched over a zoomed page");
+        assert!(!sharp_enough(876, 200.0), "far larger than drawn: wasteful");
+        assert!(!sharp_enough(100, 0.0) && !sharp_enough(100, f32::NAN));
         let mut v = view(3, PageLayout::Continuous);
         for odd in [f32::NAN, f32::INFINITY] {
             v.set_grid_zoom(odd);

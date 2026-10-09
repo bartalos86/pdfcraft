@@ -1170,6 +1170,31 @@ fn page_grid_zooms_with_its_buttons_keys_and_pinch() {
 }
 
 #[test]
+fn zoomed_pages_in_view_are_rendered_at_the_size_drawn() {
+    // A long document: sharpness must not depend on how many pages there are.
+    let mut h = harness(400, |app| {
+        app.set_option("organize", "on").unwrap();
+        app.set_option("grid-zoom", "300").unwrap();
+    });
+    let drawn = 146.0 * 3.0 * h.ctx.pixels_per_point();
+    let sharp = |h: &Harness<'static, PdfCraftApp>, page| h.state().views[0].grid_page_pixels(page);
+    for _ in 0..200 {
+        if sharp(&h, 0).is_some_and(|w| w as f32 >= drawn * 0.9) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        h.run_steps(1);
+    }
+    let width = sharp(&h, 0).expect("the first page has a sharp render");
+    assert!((drawn * 0.9..=drawn * 1.6).contains(&(width as f32)), "{width} for {drawn}");
+    assert!(sharp(&h, 399).is_none(), "pages out of view have none");
+    // Zoomed out again, thumbnails are enough and the sharp renders are dropped.
+    h.state_mut().set_option("grid-zoom", "50").unwrap();
+    h.run_steps(3);
+    assert!(sharp(&h, 0).is_none());
+}
+
+#[test]
 fn a_zoomed_page_grid_still_inserts_and_moves_at_the_right_gap() {
     let dir = temp_path("zoomed-grid");
     std::fs::create_dir_all(&dir).unwrap();
