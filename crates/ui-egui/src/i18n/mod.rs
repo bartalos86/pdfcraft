@@ -1526,7 +1526,7 @@ mod tests {
         assert_eq!(tr(hu, "Rapport de l'utilisateur.pdf"), "Rapport de l'utilisateur.pdf");
         assert_eq!(tr_ctx(hu, "signature pad", "Type"), "Gépelés");
         assert_eq!(tr_ctx(hu, "action wizard", "Start"), "Indítás");
-        assert_eq!(tr(hu, "Windows store  ·  "), "Windows Store  ·  ");
+        assert_eq!(tr(hu, "Windows store  ·  "), "Windows-tároló  ·  ");
         assert_eq!(tr(hu, "Place saved {what}"), "Mentett {what} elhelyezése");
         assert_eq!(tr(hu, "Remove saved {what}"), "Mentett {what} eltávolítása");
         assert_eq!(tr(hu, "Squiggly"), "Hullámos aláhúzás");

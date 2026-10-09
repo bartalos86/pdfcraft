@@ -789,7 +789,7 @@
 	Sign with a Digital ID	Aláírás digitális azonosítóval
 	Choose the digital ID that you want to use for signing:	Válaszd ki az aláíráshoz használandó digitális azonosítót:
 	Keychain  ·  	Kulcskarika  ·  
-	Windows store  ·  	Windows Store  ·  
+	Windows store  ·  	Windows-tároló  ·  
 	Issued by: 	Kiállította: 
 	, Expires: 	, lejár: 
 	No digital IDs yet.	Még nincs digitális azonosító.
@@ -2065,7 +2065,7 @@ action wizard	Start	Indítás
 	The document was closed before it could be saved.	A dokumentum bezárult, mielőtt menteni lehetett volna.
 	The pages were extracted but not deleted, because the document changed while you were choosing a folder.	Az oldalak kinyerése megtörtént, de nem lettek törölve, mert a dokumentum megváltozott, amíg mappát választottál.
 	That didn't work: an internal error stopped it ({m}).	Ez nem sikerült: belső hiba állította le ({m}).
-	The Windows store's digital IDs couldn't be listed: {e}	A Windows Store digitális azonosítóit nem sikerült listázni: {e}
+	The Windows store's digital IDs couldn't be listed: {e}	A Windows-tároló digitális azonosítóit nem sikerült listázni: {e}
 	Align fields	Mezők igazítása
 	Distribute fields	Mezők elosztása
 	Match field sizes	Mezőméretek egyeztetése
