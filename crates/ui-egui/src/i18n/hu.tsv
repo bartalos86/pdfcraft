@@ -119,7 +119,7 @@
 	Next page	Következő oldal
 	Previous page	Előző oldal
 	Current page — type a page number or label (such as iv) and press Enter	Aktuális oldal — írj be egy oldalszámot vagy címkét (például iv), majd nyomd meg az Entert
-	Welcome to PdfCraft	Üdvözöl a PdfCraft
+	Welcome to PdfCraft	Üdvözöljük a PdfCraftban
 	An open-source PDF workbench — local, private, and scriptable.	Nyílt forráskódú PDF-munkapad — helyi, privát és parancsfájlokkal vezérelhető.
 	Join the ArtCraft community	Csatlakozz az ArtCraft közösséghez
 	Get help, share feedback and follow development on Discord.	Kérj segítséget, oszd meg a véleményed, és kövesd a fejlesztést a Discordon.
@@ -788,10 +788,10 @@
 	Couldn't open the signed version: {e}	Az aláírt változatot nem sikerült megnyitni: {e}
 	Sign with a Digital ID	Aláírás digitális azonosítóval
 	Choose the digital ID that you want to use for signing:	Válaszd ki az aláíráshoz használandó digitális azonosítót:
-	Keychain  ·  	Kulcskarika  ·  
-	Windows store  ·  	Windows-tároló  ·  
-	Issued by: 	Kiállította: 
-	, Expires: 	, lejár: 
+	Keychain  ·  	Kulcskarika  ·
+	Windows store  ·  	Windows-tároló  ·
+	Issued by: 	Kiállította:
+	, Expires: 	, lejár:
 	No digital IDs yet.	Még nincs digitális azonosító.
 	Configure New Digital ID	Új digitális azonosító beállítása
 	Continue	Tovább
