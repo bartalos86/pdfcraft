@@ -2005,3 +2005,9 @@
 	Couldn't import the signature image: {e}	No se pudo importar la imagen de la firma: {e}
 	Go to page…	Ir a la página…
 	The standard fonts can't draw “{c}” ({code}). Only Western European characters can be added as text for now.	Las fuentes estándar no pueden mostrar «{c}» ({code}). Por ahora solo se pueden añadir como texto caracteres de Europa occidental.
+	Open arrow	Flecha abierta
+	Closed arrow	Flecha cerrada
+	Butt	Extremo recto
+	Reverse open arrow	Flecha abierta invertida
+	Reverse closed arrow	Flecha cerrada invertida
+	Slash	Barra
