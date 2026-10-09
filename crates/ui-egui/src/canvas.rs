@@ -1407,6 +1407,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         let mut current = view.current;
         let mut best_overlap = -1.0f32;
         let mut current_overlap = -1.0f32;
+        let mut current_height = f32::INFINITY;
         let pointer = ui.input(|i| i.pointer.hover_pos());
         for &i in &visible_pages {
             let r = snap_to_pixels(rects[i].translate(origin.to_vec2()), ppp);
@@ -1422,6 +1423,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             let overlap = r.intersect(visible).height();
             if i == view.current {
                 current_overlap = overlap;
+                current_height = r.height();
             }
             // Pages shown equally (two rows wholly on screen) differ only by rounding: the
             // topmost one counts.
@@ -1839,7 +1841,10 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         }
         // The page navigated to stays current while no page shows more of itself, so the next
         // page step starts from it rather than from a page further down the screen (#188).
-        if current_overlap >= best_overlap - TIE {
+        // It also stays current while it is wholly on screen: a short page (a cheque) gone to
+        // from the Pages panel shows less of itself than the tall page below it, and must not
+        // hand the highlight to that page.
+        if current_overlap >= best_overlap - TIE || current_overlap >= current_height - TIE {
             current = view.current;
         }
         if view.layout != PageLayout::Single {
