@@ -1717,3 +1717,23 @@ fn print_shortcut_offers_the_pages_picked_in_the_pages_panel() {
     h.get_by_label("Selected pages (2)");
     h.get_by_label("Sheet 1 of 2");
 }
+
+#[test]
+fn dragging_pages_panel_thumbnails_reorders_pages() {
+    let mut h = harness(4, |app| app.right = Some(pdfcraft_ui_egui::RightPanel::Pages));
+    let before = page_texts(h.state());
+    // The Pages panel is on the right; the document view may label its pages too.
+    let thumb = |h: &Harness<'static, PdfCraftApp>, label: &str| {
+        h.get_all_by_label(label).map(|n| n.rect()).max_by(|a, b| a.left().total_cmp(&b.left())).expect("the thumbnail")
+    };
+    // Grab page 3 (page 4 is below the window) and drop it above page 1.
+    let (from, to) = (thumb(&h, "Page 3").center(), thumb(&h, "Page 1").center_top() + egui::vec2(0.0, 4.0));
+    drag(&mut h, from, to);
+    h.run_steps(4);
+    let after = page_texts(h.state());
+    assert_eq!(after, vec![before[2].clone(), before[0].clone(), before[1].clone(), before[3].clone()], "{after:?}");
+    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().can_undo(), Some("Move page"));
+    let view = &h.state().views[0];
+    assert_eq!(view.selected.iter().copied().collect::<Vec<_>>(), vec![0], "the moved page stays selected");
+    assert!(view.panel_drag.is_none());
+}

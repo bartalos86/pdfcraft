@@ -621,3 +621,19 @@ fn a_short_page_gone_to_from_the_pages_panel_stays_current() {
         assert_eq!(h.state().views[0].current, page, "clicked page {}", page + 1);
     }
 }
+
+#[test]
+fn pages_panel_thumbnails_have_a_context_menu() {
+    let mut h = pages_panel_harness(&[(200, 300); 4]);
+    let at = thumbnail(&h, "Page 3");
+    press(&mut h, at, egui::PointerButton::Secondary);
+    h.run_steps(2);
+    // The page right-clicked becomes the selection the menu acts on.
+    assert_eq!(h.state().views[0].target_pages(), vec![2]);
+    for item in ["Extract pages", "Cut", "Paste after"] {
+        h.get_by_label(item);
+    }
+    h.get_by_label("Copy").click();
+    h.run_steps(3);
+    assert_eq!(h.state().page_clipboard.as_ref().map(|c| c.pages.clone()), Some(vec![2]));
+}
