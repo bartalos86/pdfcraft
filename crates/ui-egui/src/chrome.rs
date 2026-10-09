@@ -98,32 +98,36 @@ fn tab(ui: &mut egui::Ui, t: &Tokens, icon: &str, name: &str, dirty: bool, activ
     let (rect, resp) = ui.allocate_exact_size(vec2(text_w + 64.0, 30.0), Sense::click());
     let a11y = if dirty { format!("{name} (edited)") } else { name.to_string() };
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, active, &a11y));
+    let press = theme::Press::track(ui, &resp);
     let bg = if active {
-        t.chrome
-    } else if resp.hovered() {
-        t.hover
+        press.fill(t.chrome, t.chrome.lerp_to_gamma(t.hover, 0.65), t.hover)
     } else {
-        Color32::TRANSPARENT
+        press.fill(Color32::TRANSPARENT, t.hover, t.pressed)
     };
-    ui.painter().rect_filled(rect, CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, bg);
+    if bg.a() > 0 {
+        ui.painter().rect_filled(rect, CornerRadius { nw: 7, ne: 7, sw: 0, se: 0 }, bg);
+    }
     icons::paint(ui, Rect::from_min_size(rect.min + vec2(6.0, 7.0), vec2(16.0, 16.0)), icon, 15.0, if active { t.accent } else { t.text_muted });
     ui.painter().text(rect.min + vec2(28.0, rect.height() / 2.0), Align2::LEFT_CENTER, label, font, if active { t.text } else { t.text_muted });
     let x_rect = Rect::from_center_size(rect.right_center() - vec2(16.0, 0.0), vec2(20.0, 20.0));
     let x = ui.interact(x_rect, ui.id().with(("tabclose", index)), Sense::click());
-    if x.hovered() {
-        ui.painter().rect_filled(x_rect, CornerRadius::same(4), t.pressed);
-    }
+    let x_press = theme::Press::track(ui, &x);
+    x_press.wash(ui, x_rect, 4, false);
     // Unsaved changes: a dot where the close button sits, until the tab is hovered.
     if dirty && !resp.hovered() && !x.hovered() {
         ui.painter().circle_filled(x_rect.center(), 4.0, if active { t.text } else { t.text_muted });
     } else if active || resp.hovered() || x.hovered() {
-        icons::paint(ui, x_rect, "x", 13.0, t.text_muted);
+        icons::paint(ui, x_rect.translate(x_press.offset()), "x", 13.0, t.text_muted);
     }
-    if x.clicked() {
+    if theme::hand(x).clicked() {
         *close = Some(index);
     }
     let shown = crate::bidi::visual(name);
-    resp.on_hover_text(if dirty { crate::i18n::fmt(tl!("{name} — unsaved changes"), &[("name", shown.as_ref())]) } else { shown.into_owned() })
+    theme::hand(resp).on_hover_text(if dirty {
+        crate::i18n::fmt(tl!("{name} — unsaved changes"), &[("name", shown.as_ref())])
+    } else {
+        shown.into_owned()
+    })
 }
 
 pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {

@@ -2448,12 +2448,12 @@ fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
                                 for tool in comments::GROUPS[g] {
                                     let on = app.quick_tool == QuickTool::Comment(*tool);
                                     let (row, click) = ui.allocate_exact_size(vec2(180.0, 28.0), Sense::click());
-                                    if click.hovered() {
-                                        ui.painter().rect_filled(row, CornerRadius::same(4), t.hover);
-                                    }
-                                    icons::paint(ui, Rect::from_min_size(row.min + vec2(8.0, 6.0), vec2(16.0, 16.0)), tool.icon(), 16.0, t.text);
+                                    let press = theme::Press::track(ui, &click);
+                                    press.wash(ui, row, 4, on);
+                                    let body = row.translate(press.offset());
+                                    icons::paint(ui, Rect::from_min_size(body.min + vec2(8.0, 6.0), vec2(16.0, 16.0)), tool.icon(), 16.0, t.text);
                                     ui.painter().text(
-                                        row.left_center() + vec2(34.0, 0.0),
+                                        body.left_center() + vec2(34.0, 0.0),
                                         Align2::LEFT_CENTER,
                                         tl!(tool.label()),
                                         theme::regular(13.0),
@@ -2462,13 +2462,13 @@ fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
                                     if on {
                                         icons::paint(
                                             ui,
-                                            Rect::from_min_size(row.right_top() + vec2(-24.0, 7.0), vec2(14.0, 14.0)),
+                                            Rect::from_min_size(body.right_top() + vec2(-24.0, 7.0), vec2(14.0, 14.0)),
                                             "check",
                                             14.0,
                                             t.accent,
                                         );
                                     }
-                                    let click = click.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    let click = theme::hand(click);
                                     let info = tl!(tool.label()).to_string();
                                     click.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, info.clone()));
                                     if click.clicked() {
@@ -2513,12 +2513,12 @@ fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
                                 }
                                 let on = current_fill == Some(tool);
                                 let (row, click) = ui.allocate_exact_size(vec2(180.0, 28.0), Sense::click());
-                                if click.hovered() {
-                                    ui.painter().rect_filled(row, CornerRadius::same(4), t.hover);
-                                }
-                                icons::paint(ui, Rect::from_min_size(row.min + vec2(8.0, 6.0), vec2(16.0, 16.0)), tool.icon(), 16.0, t.text);
+                                let press = theme::Press::track(ui, &click);
+                                press.wash(ui, row, 4, on);
+                                let body = row.translate(press.offset());
+                                icons::paint(ui, Rect::from_min_size(body.min + vec2(8.0, 6.0), vec2(16.0, 16.0)), tool.icon(), 16.0, t.text);
                                 ui.painter().text(
-                                    row.left_center() + vec2(34.0, 0.0),
+                                    body.left_center() + vec2(34.0, 0.0),
                                     Align2::LEFT_CENTER,
                                     tl!(tool.label()),
                                     theme::regular(13.0),
@@ -2527,12 +2527,13 @@ fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
                                 if on {
                                     icons::paint(
                                         ui,
-                                        Rect::from_min_size(row.right_top() + vec2(-24.0, 7.0), vec2(14.0, 14.0)),
+                                        Rect::from_min_size(body.right_top() + vec2(-24.0, 7.0), vec2(14.0, 14.0)),
                                         "check",
                                         14.0,
                                         t.accent,
                                     );
                                 }
+                                let click = theme::hand(click);
                                 let info = tl!(tool.label()).to_string();
                                 click.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, info.clone()));
                                 if click.clicked() {
