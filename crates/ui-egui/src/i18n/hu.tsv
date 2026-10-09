@@ -2084,3 +2084,6 @@ action wizard	Start	Indítás
 	H / Space (hold)	H / szóköz (nyomva tartva)
 	Flatten Fill & Sign when saving	Kitöltés és aláírás beégetése mentéskor
 	Text, marks and signatures become part of the page. Other comments stay editable.	A szöveg, a jelek és az aláírások az oldal részévé válnak. A többi megjegyzés szerkeszthető marad.
+	Rotation:	Elforgatás:
+	Line ending	Vonalvég
+	The standard fonts can't draw “{c}” ({code}). Only Western European characters can be added as text for now.	A szabványos betűtípusok nem tudják megjeleníteni ezt: „{c}” ({code}). Egyelőre csak nyugat-európai karakterek adhatók hozzá szövegként.
