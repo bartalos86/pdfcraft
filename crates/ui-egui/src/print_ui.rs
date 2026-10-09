@@ -271,8 +271,9 @@ pub(crate) fn preview_rasters(d: &PrintDraft, sizes: &[(f64, f64)], labels: &[St
     let i = d.sheet.min(sheets.len() - 1);
     let last = sheets.len() - 1;
     let mut out = Vec::new();
-    for s in i.saturating_sub(1)..=(i + 1).min(last) {
-        let sheet = &sheets[s];
+    let start = i.saturating_sub(1);
+    let end = (i + 1).min(last);
+    for sheet in sheets.get(start..=end).into_iter().flatten() {
         let (sw, sh) = (sheet.size.0 as f32, sheet.size.1 as f32);
         if !(sw.is_finite() && sh.is_finite()) || sw < 1.0 || sh < 1.0 {
             continue;
