@@ -367,12 +367,9 @@ pub(crate) fn section(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             let size = crate::panels::human_size(usize::try_from(f.size).unwrap_or(usize::MAX));
             let when = f.modified.map(crate::combine_ui::ago).unwrap_or_default();
             let detail = if when.is_empty() { size } else { format!("{when}  ·  {size}") };
-            let detail_font = theme::regular(12.0);
-            let detail_w = crate::widgets::text_width(ui, &detail, &detail_font);
-            ui.painter().text(rect.right_center() - vec2(12.0, 0.0), Align2::RIGHT_CENTER, detail, detail_font, t.text_muted);
-            let max_w = (rect.width() - 62.0 - detail_w - 20.0).max(0.0);
-            let name = crate::bidi::visual(&f.name);
-            crate::widgets::paint_left(ui, rect.min + vec2(62.0, 19.0), name.as_ref(), theme::medium(13.0), t.text, max_w);
+            let detail = ui.painter().text(rect.right_center() - vec2(12.0, 0.0), Align2::RIGHT_CENTER, detail, theme::regular(12.0), t.text_muted);
+            let width = detail.left() - 16.0 - (rect.left() + 62.0);
+            widgets::row_text(ui, rect.min + vec2(62.0, 19.0), crate::bidi::visual(&f.name), theme::medium(13.0), t.text, width);
             if resp.on_hover_text(&f.path).clicked() {
                 open = Some(f.path.clone());
             }

@@ -123,16 +123,18 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     22.0,
                     egui::Color32::from_rgb(0xE0, 0x3E, 0x3E),
                 );
-                let meta = format!("{} {}  ·  {}", r.pages, tl!("pages"), human_size(r.size));
-                let meta_font = theme::regular(12.0);
-                let meta_w = crate::widgets::text_width(ui, &meta, &meta_font);
-                ui.painter().text(rect.right_center() - vec2(12.0, 0.0), Align2::RIGHT_CENTER, meta, meta_font, t.text_muted);
-                let max_w = (rect.width() - 46.0 - meta_w - 24.0).max(0.0);
-                let name = crate::bidi::visual(&r.name);
-                let path = crate::bidi::visual(&r.path);
-                crate::widgets::paint_left(ui, rect.min + vec2(46.0, 15.0), name.as_ref(), theme::medium(13.5), t.text, max_w);
-                crate::widgets::paint_left(ui, rect.min + vec2(46.0, 32.0), path.as_ref(), theme::regular(11.0), t.text_faint, max_w);
-                if resp.clicked() {
+                let detail = ui.painter().text(
+                    rect.right_center() - vec2(12.0, 0.0),
+                    Align2::RIGHT_CENTER,
+                    format!("{} {}  ·  {}", r.pages, tl!("pages"), human_size(r.size)),
+                    theme::regular(12.0),
+                    t.text_muted,
+                );
+                // The name and path stop short of the page count; hovering shows the whole path.
+                let width = detail.left() - 16.0 - (rect.left() + 46.0);
+                widgets::row_text(ui, rect.min + vec2(46.0, 15.0), crate::bidi::visual(&r.name), theme::medium(13.5), t.text, width);
+                widgets::row_text(ui, rect.min + vec2(46.0, 32.0), crate::bidi::visual(&r.path), theme::regular(11.0), t.text_faint, width);
+                if resp.on_hover_text(&r.path).clicked() {
                     open = Some(r.path.clone());
                 }
             }
