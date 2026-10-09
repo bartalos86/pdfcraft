@@ -329,7 +329,7 @@ pub(crate) fn body(
                 ui.radio_value(&mut d.which, Which::Range, tl!("Pages"));
                 let r = ui.add_enabled(
                     d.which == Which::Range,
-                    egui::TextEdit::singleline(&mut d.range).hint_text(format!("1-{}", sizes.len())).desired_width(110.0),
+                    crate::widgets::line(&mut d.range).hint_text(format!("1-{}", sizes.len())).desired_width(110.0),
                 );
                 if r.gained_focus() {
                     d.which = Which::Range;

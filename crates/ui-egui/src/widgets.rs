@@ -5,6 +5,71 @@ use egui::{Align2, Color32, CornerRadius, Rect, Response, Sense, Stroke, vec2};
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, icons};
 
+/// Horizontal and vertical inset of a single-line field.
+const FIELD_MARGIN: egui::Margin = egui::Margin::symmetric(10, 6);
+/// Outer height of a single-line field, including its inset.
+const FIELD_MIN_HEIGHT: f32 = 30.0;
+/// Padding inside every modal.
+const DIALOG_PAD_X: i8 = 20;
+const DIALOG_PAD_Y: i8 = 16;
+
+fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
+    let t = Tokens::get(ctx);
+    egui::Frame::new()
+        .fill(t.card)
+        .stroke(Stroke::new(1.0, t.border))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(egui::Margin::symmetric(DIALOG_PAD_X, DIALOG_PAD_Y))
+        .shadow(ctx.global_style().visuals.window_shadow)
+}
+
+/// A modal with the card fill, a 10-point corner and room around its contents.
+pub fn modal(ctx: &egui::Context, id: impl std::hash::Hash + std::fmt::Debug) -> egui::Modal {
+    egui::Modal::new(egui::Id::new(id)).frame(dialog_frame(ctx))
+}
+
+/// Show [`modal`], outline its controls, and remember the card rect for layout checks.
+pub fn show_modal<R>(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::Ui) -> R) -> egui::ModalResponse<R> {
+    let stored = egui::Id::new(id);
+    modal(ctx, id).show(ctx, |ui| {
+        begin_dialog(ui);
+        let inner = content(ui);
+        // The frame's stroke sits outside this content rect; the stored card is the fill.
+        let card = ui.min_rect().expand2(egui::vec2(f32::from(DIALOG_PAD_X), f32::from(DIALOG_PAD_Y)));
+        ui.ctx().data_mut(|d| d.insert_temp(stored.with("card"), card));
+        inner
+    })
+}
+
+/// Outlined controls at a shared 30-point height, with a focus stroke and 4-point corners.
+///
+/// Dialog fills match the theme's field colour, so radio buttons, check boxes, combo boxes
+/// and number fields need the border or they disappear into the card.
+pub fn begin_dialog(ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let w = &mut ui.visuals_mut().widgets;
+    w.inactive.bg_stroke = Stroke::new(1.0, t.border);
+    w.inactive.weak_bg_fill = t.field;
+    // Slider rails and check-box interiors use the plain fill.
+    w.inactive.bg_fill = t.hover;
+    w.hovered.bg_stroke = Stroke::new(1.0, t.text_muted);
+    for state in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+        state.corner_radius = CornerRadius::same(4);
+    }
+    ui.visuals_mut().selection.stroke = Stroke::new(1.5, t.accent);
+    ui.spacing_mut().interact_size.y = FIELD_MIN_HEIGHT;
+}
+
+/// A single-line field tall enough to read and to click.
+pub fn line(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text).margin(FIELD_MARGIN).min_size(vec2(0.0, FIELD_MIN_HEIGHT))
+}
+
+/// A multiline field with the same horizontal inset as [`line`].
+pub fn block(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
+    egui::TextEdit::multiline(text).margin(egui::Margin::symmetric(10, 6))
+}
+
 /// A mode-bar tab: text with an underline when active.
 pub fn mode_tab(ui: &mut egui::Ui, label: &str, active: bool) -> Response {
     let t = Tokens::get(ui.ctx());
@@ -322,5 +387,18 @@ mod tests {
         app.notify("Saved");
         let again = toast_rect(&mut app, &ctx, 1280.0, &mut now);
         assert!((again.width() - short.width()).abs() < 1.0, "long notices must not impose a permanent minimum width");
+    }
+
+    #[test]
+    fn line_field_is_at_least_thirty_points_tall() {
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        let mut height = 0.0;
+        ctx.run_ui(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 200.0))), ..Default::default() }, |ui| {
+            begin_dialog(ui);
+            height = ui.add(line(&mut text)).rect.height();
+        })
+        .drop_without_applying_deltas();
+        assert!(height >= FIELD_MIN_HEIGHT, "field height {height}");
     }
 }
