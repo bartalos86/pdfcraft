@@ -308,6 +308,8 @@
 	Text (plain)	Звичайний текст
 	PostScript / EPS	PostScript / EPS
 	Fill & Sign	Заповнення й підпис
+	Flatten Fill & Sign when saving	Звести «Заповнення й підпис» під час збереження
+	Text, marks and signatures become part of the page. Other comments stay editable.	Текст, позначки й підписи стають частиною сторінки. Інші коментарі залишаються редагованими.
 	Fill	Заповнити
 	Checkmark	Позначка
 	Cross	Хрестик
