@@ -478,7 +478,6 @@ fn choose(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
             };
             ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
             icons::paint(ui, Rect::from_min_size(rect.min + vec2(10.0, 15.0), vec2(20.0, 20.0)), "badge-check", 18.0, t.accent);
-            ui.painter().text(rect.min + vec2(40.0, 9.0), egui::Align2::LEFT_TOP, &e.name, theme::semibold(13.0), t.text);
             let sub = format!(
                 "{keychain}{email}{issued}{issuer}{expires}{date}",
                 keychain = if e.path.starts_with("keychain:") {
@@ -494,7 +493,20 @@ fn choose(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
                 expires = tl!(", Expires: "),
                 date = e.expires,
             );
-            ui.painter().text(rect.min + vec2(40.0, 28.0), egui::Align2::LEFT_TOP, sub, theme::regular(11.5), t.text_muted);
+            // Painted text does not wrap, and a long common name or issuer would draw past the card.
+            let max_w = (rect.width() - 50.0).max(0.0);
+            let name_font = theme::semibold(13.0);
+            let sub_font = theme::regular(11.5);
+            let width_of = |font: &egui::FontId, s: &str| ui.fonts_mut(|f| f.layout_no_wrap(s.to_owned(), font.clone(), t.text).size().x);
+            let name = crate::widgets::fit_line(&e.name, max_w, |s| width_of(&name_font, s));
+            let detail = crate::widgets::fit_line(&sub, max_w, |s| width_of(&sub_font, s));
+            let clip = Rect::from_min_max(rect.min + vec2(40.0, 0.0), rect.right_bottom() - vec2(8.0, 0.0));
+            let painter = ui.painter().with_clip_rect(clip);
+            painter.text(rect.min + vec2(40.0, 9.0), egui::Align2::LEFT_TOP, &name, name_font, t.text);
+            painter.text(rect.min + vec2(40.0, 28.0), egui::Align2::LEFT_TOP, &detail, sub_font, t.text_muted);
+            if name != e.name || detail != sub {
+                resp.clone().on_hover_text(format!("{}\n{sub}", e.name));
+            }
             if resp.clicked() {
                 d.selected = Some(i);
             }

@@ -353,7 +353,7 @@ pub(crate) fn body(
             });
             ui.add_space(6.0);
             widgets::section_title(ui, tl!("Page Sizing & Handling"));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (h, label) in [
                     (Handling::Size, tl!("Size")),
                     (Handling::Poster, tl!("Poster")),

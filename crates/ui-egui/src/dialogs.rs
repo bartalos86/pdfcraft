@@ -78,7 +78,7 @@ pub fn show(app: &mut PdfCraftApp, ctx: &egui::Context) {
             Dialog::Properties(tab) => {
                 ui.label(egui::RichText::new(tl!("Document Properties")).font(theme::semibold(18.0)));
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     for (tb, label) in [
                         (PropsTab::Description, tl!("Description")),
                         (PropsTab::InitialView, tl!("Initial View")),
@@ -1020,7 +1020,7 @@ pub fn show(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 // Tabs About · Contributors · Models (craftrules standards/contributors.md).
                 let tab_id = egui::Id::new("about_tab");
                 let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     for (i, label) in ["About", "Contributors", "Models"].into_iter().enumerate() {
                         let i = i as u8;
                         if widgets::mode_tab(ui, tl!(label), tab == i).clicked() {

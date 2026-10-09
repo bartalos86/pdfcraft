@@ -70,6 +70,39 @@ pub fn block(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
     egui::TextEdit::multiline(text).margin(egui::Margin::symmetric(10, 6))
 }
 
+/// One line that stays within `max_width`, cut on a character boundary with an ellipsis.
+/// Only the first 160 characters are measured, so a huge name cannot lay out thousands of candidates.
+pub(crate) fn fit_line(text: &str, max_width: f32, mut width_of: impl FnMut(&str) -> f32) -> String {
+    if !max_width.is_finite() || max_width <= 0.0 {
+        return String::new();
+    }
+    let mut s: String = text.chars().take(160).collect();
+    if s.len() == text.len() && width_of(text) <= max_width {
+        return text.to_owned();
+    }
+    loop {
+        s.pop();
+        if s.is_empty() {
+            return if width_of("\u{2026}") <= max_width { "\u{2026}".into() } else { String::new() };
+        }
+        let candidate = format!("{s}\u{2026}");
+        if width_of(&candidate) <= max_width {
+            return candidate;
+        }
+    }
+}
+
+pub(crate) fn text_width(ui: &egui::Ui, text: &str, font: &egui::FontId) -> f32 {
+    ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE).size().x)
+}
+
+/// Draw `text` from `pos` (left, vertically centered) so it never runs past `max_width`.
+pub(crate) fn paint_left(ui: &egui::Ui, pos: egui::Pos2, text: &str, font: egui::FontId, color: Color32, max_width: f32) {
+    let shown = fit_line(text, max_width, |s| text_width(ui, s, &font));
+    let clip = Rect::from_min_size(egui::pos2(pos.x, pos.y - 14.0), vec2(max_width.max(0.0), 28.0));
+    ui.painter().with_clip_rect(clip).text(pos, Align2::LEFT_CENTER, shown, font, color);
+}
+
 /// A mode-bar tab: text with an underline when active.
 pub fn mode_tab(ui: &mut egui::Ui, label: &str, active: bool) -> Response {
     let t = Tokens::get(ui.ctx());
@@ -400,5 +433,18 @@ mod tests {
         })
         .drop_without_applying_deltas();
         assert!(height >= FIELD_MIN_HEIGHT, "field height {height}");
+    }
+
+    #[test]
+    fn fit_line_keeps_short_text_and_ellipsizes_the_rest() {
+        let width = |s: &str| s.chars().count() as f32;
+        assert_eq!(fit_line("localhost", 20.0, width), "localhost");
+        let long = "Apple Worldwide Developer Relations Certification Authority";
+        let fitted = fit_line(long, 24.0, width);
+        assert!(fitted.ends_with('\u{2026}'), "{fitted}");
+        assert!(fitted.chars().count() <= 24, "{fitted}");
+        assert!(long.starts_with(fitted.trim_end_matches('\u{2026}')));
+        assert_eq!(fit_line(long, 0.0, width), "");
+        assert_eq!(fit_line("ééé", 2.0, width), "é\u{2026}");
     }
 }
