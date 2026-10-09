@@ -138,16 +138,18 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     22.0,
                     egui::Color32::from_rgb(0xE0, 0x3E, 0x3E),
                 );
-                ui.painter().text(body.min + vec2(46.0, 15.0), Align2::LEFT_CENTER, crate::bidi::visual(&r.name), theme::medium(13.5), t.text);
-                ui.painter().text(body.min + vec2(46.0, 32.0), Align2::LEFT_CENTER, crate::bidi::visual(&r.path), theme::regular(11.0), t.text_faint);
-                ui.painter().text(
+                let detail = ui.painter().text(
                     body.right_center() - vec2(12.0, 0.0),
                     Align2::RIGHT_CENTER,
                     format!("{} {}  ·  {}", r.pages, tl!("pages"), human_size(r.size)),
                     theme::regular(12.0),
                     t.text_muted,
                 );
-                if theme::hand(resp).clicked() {
+                // The name and path stop short of the page count; hovering shows the whole path.
+                let width = detail.left() - 16.0 - (body.left() + 46.0);
+                widgets::row_text(ui, body.min + vec2(46.0, 15.0), crate::bidi::visual(&r.name), theme::medium(13.5), t.text, width);
+                widgets::row_text(ui, body.min + vec2(46.0, 32.0), crate::bidi::visual(&r.path), theme::regular(11.0), t.text_faint, width);
+                if theme::hand(resp).on_hover_text(&r.path).clicked() {
                     open = Some(r.path.clone());
                 }
             }
