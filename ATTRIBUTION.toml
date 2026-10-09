@@ -20,6 +20,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Simplified Chinese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "997f3479a8930bacfc330ee2c7bf882720ac4a382630b87ae808c86702586926"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/zh-hant.tsv"
 title = "Traditional Chinese (Taiwan) interface translation catalog"
@@ -30,6 +31,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Traditional Chinese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "8e2051a5fdf7c52cc4fd5f79bf4be3405c213e247cf80bba714e008ee405ec13"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/cs.tsv"
 title = "Czech interface translation catalog"
@@ -40,6 +42,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Czech UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "8bab483a3f5ba3a724365c2a5a892291a10f41fdc443eaceb66f49c8a20cae20"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/pt-br.tsv"
 title = "Brazilian Portuguese interface translation catalog"
@@ -50,6 +53,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Brazilian Portuguese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "2cd5dcc6cf7e94914b955ee0f2f5c3e8951b16e26ab49fcb7111246a6e31ee2a"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/es.tsv"
 title = "Spanish interface translation catalog"
@@ -60,6 +64,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Spanish UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "05ebb95a81e3516fed37329237a6b4f26fd2168fa36cb3e16d4ae218d00e373a"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/fr.tsv"
 title = "French interface translation catalog"
@@ -70,6 +75,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "French UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "78f794a4fdcf870b15b5692f1ff5567d4afd439bb2647c637a7ec4bdb9bc2ddb"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/de.tsv"
 title = "German interface translation catalog"
@@ -90,6 +96,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Telugu UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "d3630f989e9725c22444dc27765142674b66f72436502ca969b2851fc38d703d"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/ru.tsv"
 title = "Russian interface translation catalog"
@@ -100,6 +107,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Russian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "36d25dacd015fabf5e351407edbed3920bfdfb429d6a1482744c80e504c65c0d"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/hu.tsv"
 title = "Hungarian interface translation catalog"
@@ -121,6 +129,7 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Bulgarian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "1b164ae65c65e2902aebc1a12643cd51b2a67dd0ae2502726b8588fb3c6b54ff"
+
 [[asset]]
 path = "crates/ui-egui/src/i18n/ja.tsv"
 title = "Japanese interface translation catalog"
@@ -131,6 +140,18 @@ licence_file = "LICENSE-MIT"
 kind = "translation"
 usage = "Japanese UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "d0cbe639f664b47ec97dd573ab2642b72a1b80c170f3a756f045647f5afa34cb"
+
+[[asset]]
+path = "crates/ui-egui/src/i18n/uk.tsv"
+title = "Ukrainian interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Ukrainian UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "0d4247fb4538391b8f65238c0a422e0bd751765c3e9e3c1e85428fb967f1296c"
+
 [[asset]]
 path = "assets/icons/accessibility.svg"
 title = "Lucide icon \"accessibility\""
