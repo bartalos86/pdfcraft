@@ -2803,11 +2803,11 @@ title = "Thumbnail size slider"
 area = "D"
 tier = "P2"
 milestone = "M4"
-status = "planned"
-commands = []
+status = "shipped"
+commands = ["page.organize"]
 tools = []
-evidence = []
-notes = ""
+evidence = ["crates/ui-egui/tests/editing.rs::page_grid_zooms_with_its_buttons_keys_and_pinch", "crates/ui-egui/tests/editing.rs::a_zoomed_page_grid_still_inserts_and_moves_at_the_right_gap", "crates/ui-egui/src/canvas.rs::thumbnails_are_sharper_for_a_zoomed_grid_within_a_memory_budget"]
+notes = "Organize page grid: 50–300% with toolbar buttons (and a percentage that resets to 100%), trackpad pinch or Ctrl/⌘ + wheel about the page under the pointer, and ⌘+ / ⌘− / ⌘0; thumbnails are re-rendered sharper as the grid grows. Missing: a slider as in Acrobat; the size is per document view and not remembered between sessions; documents with very many pages keep softer thumbnails when zoomed in (all thumbnails together stay within 256 MB); the Pages side panel has no size control."
 
 [[feature]]
 id = "organize.split-every-n"

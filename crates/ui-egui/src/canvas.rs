@@ -291,6 +291,33 @@ pub struct DocView {
     /// The page-grid gap under the pointer this frame (where dropped files go), when it can
     /// take pages.
     pub grid_gap: Option<usize>,
+    /// How large the page grid draws its pages (1.0 = the usual thumbnails).
+    grid_zoom: f32,
+    /// A zoom asked for this frame (toolbar, pinch, keys); the grid applies it once it has laid
+    /// out, so it can keep the same pages in view.
+    grid_zoom_request: Option<f32>,
+    /// The page to keep in place after a grid zoom, and how far below the top of the grid its
+    /// cell was.
+    grid_anchor: Option<(usize, f32)>,
+    /// The detail thumbnails were last asked for at (see [`thumb_detail`]).
+    thumb_detail: f32,
+}
+
+/// The page grid's zoom range and the step of its buttons and keys.
+pub const GRID_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.5..=3.0;
+const GRID_ZOOM_STEP: f32 = 1.25;
+/// The most memory one document's thumbnails may take.
+const THUMB_BUDGET: f32 = 256.0 * 1024.0 * 1024.0;
+
+/// How much sharper than usual thumbnails are rendered for a grid zoomed to `zoom`: one of a few
+/// steps (so a pinch doesn't re-render on every frame), and less for documents with so many pages
+/// that sharper thumbnails of all of them would not fit [`THUMB_BUDGET`].
+fn thumb_detail(zoom: f32, pages: usize, ppp: f32) -> f32 {
+    let wanted = [1.0, 1.5, 2.0, 3.0].into_iter().find(|d| *d >= zoom).unwrap_or(3.0);
+    // A page of typical proportions (1 : 1.4) at the usual thumbnail width, RGBA.
+    let one = (THUMB_W * ppp).powi(2) * 1.4 * 4.0;
+    let affordable = (THUMB_BUDGET / (one * pages.max(1) as f32)).sqrt();
+    if affordable.is_finite() { wanted.min(affordable).max(1.0) } else { 1.0 }
 }
 
 /// Organize-toolbar actions that need the app (file pickers, new tabs, dialogs).
@@ -388,6 +415,10 @@ impl DocView {
             pending_action: None,
             insert_at: None,
             grid_gap: None,
+            grid_zoom: 1.0,
+            grid_zoom_request: None,
+            grid_anchor: None,
+            thumb_detail: 1.0,
             comments: Default::default(),
             measure: Default::default(),
             forms: Default::default(),
@@ -813,6 +844,29 @@ impl DocView {
     }
 
     /// Zoom keeping the centre of the view still.
+    /// How large the page grid draws its pages (1.0 = the usual thumbnails).
+    pub fn grid_zoom(&self) -> f32 {
+        self.grid_zoom
+    }
+
+    /// Zoom the page grid; out-of-range values are clamped and nonsense is ignored.
+    pub fn set_grid_zoom(&mut self, zoom: f32) {
+        if zoom.is_finite() {
+            self.grid_zoom = zoom.clamp(*GRID_ZOOM_RANGE.start(), *GRID_ZOOM_RANGE.end());
+        }
+    }
+
+    /// The scale to render thumbnails at; when the detail the grid needs changes, the ones
+    /// already made are redone (and stay on screen until then).
+    fn thumb_scale(&mut self, info: &DocInfo, ppp: f32) -> f32 {
+        let detail = thumb_detail(self.grid_zoom, info.pages.len(), ppp);
+        if detail != self.thumb_detail {
+            self.thumb_detail = detail;
+            self.stale_thumbs.extend(self.thumbs.keys().copied());
+        }
+        THUMB_W * detail * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max)
+    }
+
     pub fn set_zoom(&mut self, zoom: f32) {
         let centre = self.viewport_screen.center();
         self.zoom_at(zoom, centre);
@@ -1101,15 +1155,29 @@ pub fn shortcuts(view: &mut DocView, ctx: &egui::Context) {
     if pressed(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::Minus)) {
         view.rotate_view(false);
     }
-    if pressed(cmd(Key::Plus)) || pressed(cmd(Key::Equals)) {
-        view.zoom_step(true);
-    }
-    if pressed(cmd(Key::Minus)) {
-        view.zoom_step(false);
-    }
-    if pressed(cmd(Key::Num0)) {
-        view.fit = Fit::Page;
-        view.goto = Some((view.current, 0.0));
+    // In the page grid ⌘+ / ⌘− / ⌘0 size its pages instead (looking is always allowed).
+    let (zoom_in, zoom_out, zoom_reset) = (pressed(cmd(Key::Plus)) || pressed(cmd(Key::Equals)), pressed(cmd(Key::Minus)), pressed(cmd(Key::Num0)));
+    if view.organize {
+        if zoom_in {
+            view.grid_zoom_request = Some(view.grid_zoom * GRID_ZOOM_STEP);
+        }
+        if zoom_out {
+            view.grid_zoom_request = Some(view.grid_zoom / GRID_ZOOM_STEP);
+        }
+        if zoom_reset {
+            view.grid_zoom_request = Some(1.0);
+        }
+    } else {
+        if zoom_in {
+            view.zoom_step(true);
+        }
+        if zoom_out {
+            view.zoom_step(false);
+        }
+        if zoom_reset {
+            view.fit = Fit::Page;
+            view.goto = Some((view.current, 0.0));
+        }
     }
     if pressed(cmd(Key::Num1)) {
         view.set_zoom(1.0);
@@ -1928,7 +1996,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     }
     queue.extend(text_pages.into_iter().map(|page| RenderRequest { page, kind: RequestKind::Text, tile: None, scale: 1.0, tag: TEXT_TAG }));
     if want_thumbs {
-        let s = THUMB_W * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max);
+        let s = view.thumb_scale(info, ppp);
         for page in 0..info.pages.len() {
             if (!view.thumbs.contains_key(&page) || view.stale_thumbs.contains(&page)) && !view.errors.contains_key(&page) {
                 queue.push(RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG });
@@ -2636,6 +2704,30 @@ fn organize_toolbar(view: &mut DocView, info: &DocInfo, editable: bool, dirty: b
                 if save.on_hover_text(tl!("Save these pages as one PDF")).on_disabled_hover_text(tl!("No changes to save")).clicked() {
                     view.pending_action = Some(ViewAction::Save);
                 }
+                ui.add_space(8.0);
+                // Page size in the grid (right to left: in, the percentage, out).
+                let zoom = view.grid_zoom;
+                if ui
+                    .add_enabled_ui(zoom < *GRID_ZOOM_RANGE.end(), |ui| icons::button(ui, "zoom-in", 30.0, false, tl!("Larger pages")))
+                    .inner
+                    .clicked()
+                {
+                    view.grid_zoom_request = Some(zoom * GRID_ZOOM_STEP);
+                }
+                let percent = egui::Button::new(egui::RichText::new(format!("{:.0}%", zoom * 100.0)).font(theme::medium(12.0)).color(t.text_muted))
+                    .frame(false);
+                let percent = ui.add_sized([44.0, 30.0], percent);
+                percent.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Reset page size")));
+                if percent.on_hover_text(tl!("Reset page size")).clicked() {
+                    view.grid_zoom_request = Some(1.0);
+                }
+                if ui
+                    .add_enabled_ui(zoom > *GRID_ZOOM_RANGE.start(), |ui| icons::button(ui, "zoom-out", 30.0, false, tl!("Smaller pages")))
+                    .inner
+                    .clicked()
+                {
+                    view.grid_zoom_request = Some(zoom / GRID_ZOOM_STEP);
+                }
             });
         });
     });
@@ -2703,7 +2795,9 @@ fn organize_grid(
     t: &Tokens,
 ) {
     let ppp = ui.ctx().pixels_per_point();
-    let cell = vec2(190.0, 250.0);
+    // The page image scales with the zoom; the padding and the page number don't.
+    let cell = vec2(146.0 * view.grid_zoom + 44.0, 194.0 * view.grid_zoom + 56.0);
+    let anchor = view.grid_anchor.take();
     let mut open_page = None;
     organize_toolbar(view, info, editable, dirty, ui, t);
     let viewport = ui.available_rect_before_wrap();
@@ -2738,6 +2832,9 @@ fn organize_grid(
                 let c = Rect::from_min_size(pos2(row_rect.left() + left + col as f32 * cell.x, row_rect.top()), cell);
                 let resp = ui.interact(c, ui.id().with(("org", i)), if editable { Sense::click_and_drag() } else { Sense::click() });
                 cells.push((i, c));
+                if let Some((_, above)) = anchor.filter(|(page, _)| *page == i) {
+                    ui.scroll_to_rect_animation(c.translate(vec2(0.0, -above)), Some(egui::Align::Min), egui::style::ScrollAnimation::none());
+                }
                 // Drag pages to move them (the selection, or the page grabbed).
                 if resp.drag_started() {
                     if !view.selected.contains(&i) {
@@ -2874,7 +2971,23 @@ fn organize_grid(
         }
     }
     view.auto_scroll.paint(ui, viewport);
-    let s = THUMB_W * ppp / info.pages.iter().map(|p| p.width).fold(1.0, f32::max);
+    // Pinch, or Ctrl/⌘ with the wheel, zooms the grid about the page under the pointer.
+    let pinch = ui.input(|i| i.zoom_delta());
+    if (pinch - 1.0).abs() > 0.001 && pointer.is_some() && !middle_gesture {
+        view.grid_zoom_request = Some(view.grid_zoom * pinch);
+    }
+    if let Some(zoom) = view.grid_zoom_request.take() {
+        let before = view.grid_zoom;
+        view.set_grid_zoom(zoom);
+        if view.grid_zoom != before {
+            // Keep the page under the pointer (or else the first one in view) where it is.
+            let under = pointer.and_then(|p| cells.iter().find(|(_, r)| r.contains(p)));
+            let anchor = under.or_else(|| cells.iter().find(|(_, r)| r.bottom() > viewport.top()));
+            view.grid_anchor = anchor.map(|(i, r)| (*i, r.top() - viewport.top()));
+            ui.ctx().request_repaint();
+        }
+    }
+    let s = view.thumb_scale(info, ppp);
     let queue: Vec<RenderRequest> = (0..info.pages.len())
         .filter(|p| (!view.thumbs.contains_key(p) || view.stale_thumbs.contains(p)) && !view.errors.contains_key(p))
         .map(|page| RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: s, tag: THUMB_TAG })
@@ -2892,6 +3005,33 @@ fn organize_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thumbnails_are_sharper_for_a_zoomed_grid_within_a_memory_budget() {
+        // A short document gets the detail its zoom needs, in a few steps.
+        assert_eq!(thumb_detail(0.5, 30, 2.0), 1.0);
+        assert_eq!(thumb_detail(1.0, 30, 2.0), 1.0);
+        assert_eq!(thumb_detail(1.25, 30, 2.0), 1.5);
+        assert_eq!(thumb_detail(3.0, 30, 2.0), 3.0);
+        assert_eq!(thumb_detail(1e9, 30, 2.0), 3.0);
+        // A long one stays within the budget, and never below the usual detail.
+        let long = thumb_detail(3.0, 1500, 2.0);
+        assert!((1.0..3.0).contains(&long), "{long}");
+        assert_eq!(thumb_detail(3.0, 50_000, 2.0), 1.0);
+        for odd in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
+            let d = thumb_detail(odd, 0, odd);
+            assert!((1.0..=3.0).contains(&d), "{odd}: {d}");
+        }
+        let mut v = view(3, PageLayout::Continuous);
+        for odd in [f32::NAN, f32::INFINITY] {
+            v.set_grid_zoom(odd);
+            assert_eq!(v.grid_zoom(), 1.0);
+        }
+        v.set_grid_zoom(99.0);
+        assert_eq!(v.grid_zoom(), 3.0);
+        v.set_grid_zoom(-4.0);
+        assert_eq!(v.grid_zoom(), 0.5);
+    }
 
     fn view(pages: usize, layout: PageLayout) -> DocView {
         let info = pdfcraft_render::DocInfo {
