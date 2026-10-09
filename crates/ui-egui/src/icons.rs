@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use egui::{Color32, Rect, Response, Sense, Vec2};
+use egui::{Color32, Rect, Response, Sense, Stroke, Vec2};
 
 use crate::icon_data::ICONS;
 use crate::theme::{self, Tokens};
@@ -46,6 +46,9 @@ pub fn button(ui: &mut egui::Ui, name: &str, box_size: f32, selected: bool, tool
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), selected, label));
     let press = theme::Press::track(ui, &resp);
     press.wash(ui, rect, t.radius, selected);
+    if selected {
+        ui.painter().rect_stroke(rect.shrink(0.5), t.radius, Stroke::new(1.0, t.accent.gamma_multiply(0.45)), egui::StrokeKind::Inside);
+    }
     let tint = if selected { t.accent_text } else { t.icon };
     // The glyph shrinks a little and drops a pixel while the pointer is down.
     let size = (box_size * 0.5).round() * (1.0 - 0.08 * press.down);

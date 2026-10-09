@@ -24,8 +24,8 @@ pub fn mode_tab(ui: &mut egui::Ui, label: &str, active: bool) -> Response {
     let body = rect.translate(press.offset());
     ui.painter().text(body.center(), Align2::CENTER_CENTER, label, font, if active { t.text } else { t.text_muted });
     if active {
-        let r = Rect::from_min_max(rect.left_bottom() + vec2(11.0, -3.0), rect.right_bottom() - vec2(11.0, 0.0));
-        ui.painter().rect_filled(r, CornerRadius::same(1), t.text);
+        let r = Rect::from_min_max(rect.left_bottom() + vec2(10.0, -2.0), rect.right_bottom() - vec2(10.0, 0.0));
+        ui.painter().rect_filled(r, CornerRadius { nw: 1, ne: 1, sw: 0, se: 0 }, t.accent);
     }
     theme::hand(resp)
 }
@@ -41,7 +41,7 @@ pub fn pill_button(ui: &mut egui::Ui, label: &str, primary: bool) -> Response {
     let (fill, stroke, text) = if primary {
         (press.fill(t.accent, t.accent_text, t.accent.lerp_to_gamma(Color32::BLACK, 0.22)), Stroke::NONE, Color32::WHITE)
     } else {
-        (press.fill(t.card, t.hover, t.pressed), Stroke::new(1.2, t.text_muted), t.text)
+        (press.fill(t.card, t.hover, t.pressed), Stroke::new(1.0, t.border), t.text)
     };
     ui.painter().rect(rect, CornerRadius::same(14), fill, stroke, egui::StrokeKind::Inside);
     ui.painter().text(rect.translate(press.offset()).center(), Align2::CENTER_CENTER, label, font, text);
@@ -70,7 +70,8 @@ pub fn search_box(ui: &mut egui::Ui, placeholder: &str, width: f32) -> Response 
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), placeholder));
     let press = theme::Press::track(ui, &resp);
     let fill = press.fill(t.field, t.hover, t.pressed);
-    ui.painter().rect(rect, CornerRadius::same(16), fill, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    let edge = t.border.lerp_to_gamma(t.text_muted, press.hover * 0.35);
+    ui.painter().rect(rect, CornerRadius::same(16), fill, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     icons::paint(ui, Rect::from_min_size(rect.min + vec2(10.0, 8.0), vec2(16.0, 16.0)), "search", 15.0, t.text_muted);
     ui.painter().text(rect.left_center() + vec2(34.0, 0.0), Align2::LEFT_CENTER, placeholder, theme::regular(13.0), t.text_faint);
     let shortcut = ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::K));
@@ -259,7 +260,7 @@ pub fn split_pill(ui: &mut egui::Ui, icon: &str, label: &str, more: &str) -> (Re
     main.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
     arrow.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), more));
     let radius = CornerRadius::same(15);
-    ui.painter().rect(rect, radius, t.card, Stroke::new(1.2, t.text_muted), egui::StrokeKind::Inside);
+    ui.painter().rect(rect, radius, t.card, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     let left = CornerRadius { nw: 15, sw: 15, ne: 0, se: 0 };
     let right = CornerRadius { nw: 0, sw: 0, ne: 15, se: 15 };
     let main_press = theme::Press::track(ui, &main);
@@ -290,7 +291,7 @@ pub fn icon_pill(ui: &mut egui::Ui, icon: &str, label: &str, primary: bool) -> R
     let (fill, stroke, text) = if primary {
         (press.fill(t.accent, t.accent_text, t.accent.lerp_to_gamma(Color32::BLACK, 0.22)), Stroke::NONE, Color32::WHITE)
     } else {
-        (press.fill(t.card, t.hover, t.pressed), Stroke::new(1.2, t.text_muted), t.text)
+        (press.fill(t.card, t.hover, t.pressed), Stroke::new(1.0, t.border), t.text)
     };
     ui.painter().rect(rect, CornerRadius::same(15), fill, stroke, egui::StrokeKind::Inside);
     let body = rect.translate(press.offset());

@@ -48,7 +48,9 @@ fn panel_header(ui: &mut egui::Ui, t: &Tokens, title: &str, back: bool) -> (bool
             }
         });
     });
-    ui.add_space(6.0);
+    ui.add_space(2.0);
+    ui.separator();
+    ui.add_space(4.0);
     (go_back, close)
 }
 
@@ -66,7 +68,11 @@ fn all_tools(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
         }
         ui.add_space(4.0);
         let more = if app.all_tools_expanded { "View less" } else { "View more" };
-        if ui.add(egui::Label::new(egui::RichText::new(tl!(more)).color(t.accent_text).font(theme::medium(13.0))).sense(Sense::click())).clicked() {
+        if ui
+            .add(egui::Label::new(egui::RichText::new(tl!(more)).color(t.accent_text).font(theme::medium(13.0))).sense(Sense::click()))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
             app.all_tools_expanded = !app.all_tools_expanded;
         }
     });

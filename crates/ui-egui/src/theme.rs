@@ -321,6 +321,8 @@ pub fn apply(ctx: &egui::Context, kind: ThemeKind) {
         s.spacing.menu_margin = egui::Margin::same(6);
         s.spacing.scroll.bar_width = 8.0;
         s.spacing.scroll.floating = true;
+        s.spacing.scroll.floating_width = 3.0;
+        s.spacing.scroll.foreground_color = true;
         s.text_styles.insert(egui::TextStyle::Body, regular(13.0));
         s.text_styles.insert(egui::TextStyle::Button, regular(13.0));
         s.text_styles.insert(egui::TextStyle::Small, regular(11.0));

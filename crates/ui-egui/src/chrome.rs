@@ -95,7 +95,8 @@ fn tab(ui: &mut egui::Ui, t: &Tokens, icon: &str, name: &str, dirty: bool, activ
     // Painted text only: the accessibility name below keeps the logical order.
     let label = crate::bidi::visual(&label).into_owned();
     let text_w = ui.fonts_mut(|f| f.layout_no_wrap(label.clone(), font.clone(), t.text).size().x);
-    let (rect, resp) = ui.allocate_exact_size(vec2(text_w + 64.0, 30.0), Sense::click());
+    // Full strip height so the active tab sits on the mode bar instead of floating in the title bar.
+    let (rect, resp) = ui.allocate_exact_size(vec2(text_w + 64.0, ui.available_height().max(30.0)), Sense::click());
     let a11y = if dirty { format!("{name} (edited)") } else { name.to_string() };
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, active, &a11y));
     let press = theme::Press::track(ui, &resp);
@@ -325,7 +326,10 @@ pub fn right_rail(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     view.fit = if view.fit == Fit::Width { Fit::Page } else { Fit::Width };
                     view.goto = Some((view.current, 0.0));
                 }
-                ui.label(egui::RichText::new(format!("{:.0}%", view.zoom * 100.0)).font(theme::regular(10.5)).color(t.text_faint));
+                let zoom = format!("{:.0}%", view.zoom * 100.0);
+                ui.allocate_ui_with_layout(vec2(40.0, 16.0), Layout::top_down(Align::Center), |ui| {
+                    ui.label(egui::RichText::new(zoom).font(theme::medium(11.0)).color(t.text_muted));
+                });
                 ui.add_space(6.0);
                 if icons::button(ui, "chevron-down", 30.0, false, tl!("Next page")).clicked() {
                     view.step_page(true);
