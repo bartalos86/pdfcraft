@@ -35,6 +35,7 @@ impl Default for RedactPrefs {
             use_overlay: false,
             overlay: String::new(),
             use_code: false,
+            // Infallible: a non-empty constant array.
             code_set: REDACTION_CODE_SETS[0],
             codes: Vec::new(),
             look: Default::default(),
