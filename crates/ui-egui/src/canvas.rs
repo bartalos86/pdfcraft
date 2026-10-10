@@ -29,12 +29,9 @@ const GRID_TAG: u64 = 1 << 61;
 const STALE_TAG: u64 = u64::MAX;
 /// Pages whose raster would exceed this many device pixels on a side are drawn in tiles.
 const TILE_THRESHOLD: f32 = 4096.0;
-/// A whole-page raster may be drawn at twice the screen density up to this side, then filtered
-/// down into the page rectangle. Past it the page stays one screen pixel per sample (or tiles).
-const SUPERSAMPLE_LIMIT: f32 = 8192.0;
 const TILE: u32 = 1024;
 /// Longest side of the backdrop drawn under tiles, and of a live page preview (signature drag).
-pub(crate) const BASE_SIDE: f32 = 4096.0;
+pub(crate) const BASE_SIDE: f32 = 2048.0;
 /// Print-preview rasters (distinct from thumbnails and from organize-grid renders).
 const PRINT_TAG: u64 = 1 << 60;
 /// Thumbnail slot before density scaling. The pages panel draws at most 150 logical points and
@@ -1401,8 +1398,8 @@ impl DocView {
     }
 
     fn render_scale(&self, ppp: f32) -> f32 {
-        // Screen pixels per PDF point. A whole-page raster may be drawn at twice this and filtered
-        // down ([`whole_page_scale`]). Any other scale is resampled and looks soft (#260).
+        // Exactly the device scale: a raster at any other scale is resampled on screen, which
+        // blurs every line and glyph (#260).
         self.zoom * PT * ppp
     }
 
@@ -1425,13 +1422,6 @@ impl DocView {
 /// The request tag for a raster at `scale`: equal tags mean the same scale (to 1/65536).
 fn scale_tag(scale: f32) -> u64 {
     (f64::from(scale) * 65536.0).round() as u64
-}
-
-/// Scale for a whole-page raster. Twice the screen density when the bitmap still fits in
-/// 8192 px on its long side; otherwise exactly the screen density, so it maps texel for texel.
-pub fn whole_page_scale(device: f32, long_pt: f32) -> f32 {
-    let sharp = device * 2.0;
-    if long_pt.max(1.0) * sharp <= SUPERSAMPLE_LIMIT { sharp } else { device }
 }
 
 /// The scale of a raster tagged by [`scale_tag`].
@@ -1989,19 +1979,16 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 painter.galley(pos2(r.center().x - msg.size().x / 2.0, r.center().y), msg, Color32::BLACK);
             } else {
                 let (pw_pt, ph_pt) = (info.pages[i].width.max(1.0), info.pages[i].height.max(1.0));
-                let long_pt = pw_pt.max(ph_pt);
                 // A GPU may take smaller textures than these (OpenGL drivers report as little as
                 // 2048 pixels, and uploading a bigger one aborts), so both stay within its limit.
-                let max_side = (ui.ctx().input(|inp| inp.max_texture_side) as f32).max(1.0);
-                let tiled = long_pt * scale > TILE_THRESHOLD.min(max_side);
-                // Whole-page raster: above screen density when it fits, a backdrop when tiled.
-                let page_scale = whole_page_scale(scale, long_pt).min(max_side / long_pt);
-                let supersampled = !tiled && page_scale > scale;
+                let max_side = ui.ctx().input(|inp| inp.max_texture_side) as f32;
+                let tiled = pw_pt.max(ph_pt) * scale > TILE_THRESHOLD.min(max_side);
+                // Whole-page raster: sharp when small, a low-res backdrop when tiled.
                 let (want_scale, want_tag) = if tiled {
                     let bs = BASE_SIDE.min(max_side) / pw_pt.max(ph_pt);
                     (bs, scale_tag(bs))
                 } else {
-                    (page_scale, scale_tag(page_scale))
+                    (scale, tag)
                 };
                 // Under tiles, a whole-page raster sharper than the backdrop (from before the page
                 // grew past the tiling size) is a better backdrop: keep demanding it as it is.
@@ -2011,11 +1998,10 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 }
                 match view.pages.get(&i) {
                     Some(p) => {
-                        if !tiled && p.tag == want_tag && !supersampled {
+                        if !tiled && p.tag == want_tag {
                             xf.texel_aligned(p.tex.size(), ppp).paint_image(painter, p.tex.id(), 0.0, 0.0, 1.0, 1.0);
                         } else {
-                            // Supersampled (filtered down into the page), a backdrop, or a raster
-                            // at an older scale until the new one arrives.
+                            // A backdrop, or a raster at an older scale until the new one arrives.
                             xf.paint_image(painter, p.tex.id(), 0.0, 0.0, 1.0, 1.0);
                         }
                     }
