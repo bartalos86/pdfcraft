@@ -144,9 +144,18 @@ impl Walker<'_> {
     /// The text the marked content shows (`page`: where marks without a page of their own are).
     fn marked_text(&mut self, marks: &[(Option<ObjRef>, i64)], page: usize) -> Option<String> {
         let mut parts = Vec::new();
+        // The title is cut to MAX_TITLE characters later: stop gathering well before a heading
+        // that repeats one mark many times can pile up gigabytes.
+        let mut gathered = 0usize;
         for (p, id) in marks {
+            if gathered >= MAX_TITLE * 4 {
+                break;
+            }
             let page = p.and_then(|p| self.page_index.get(&p).copied()).unwrap_or(page);
-            parts.extend(self.texts_of(page).get(id).cloned());
+            if let Some(text) = self.texts_of(page).get(id) {
+                gathered = gathered.saturating_add(text.len()).saturating_add(1);
+                parts.push(text.clone());
+            }
         }
         Some(parts.join(" ")).filter(|t| !t.trim().is_empty())
     }
