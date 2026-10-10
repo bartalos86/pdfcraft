@@ -736,8 +736,7 @@ mod tests {
     #[test]
     fn print_preview_rasters_stay_within_the_texture_limit() {
         // Actual size on a 14,400 pt (200 in) page would ask for a raster far past any texture.
-        let mut d = PrintDraft::default();
-        d.size = SizeMode::Actual;
+        let d = PrintDraft { size: SizeMode::Actual, ..PrintDraft::default() };
         let sizes = vec![(14_400.0, 14_400.0); 2];
         let labels = vec!["1".into(), "2".into()];
         for max_side in [2048.0, 8192.0, 16384.0, f32::NAN, 0.0] {
@@ -753,8 +752,7 @@ mod tests {
     fn print_preview_rasters_keep_the_current_sheet_within_the_byte_budget() {
         // Many large pages: the current sheet always gets its raster; neighbours only while the
         // budget lasts, and the total stays within it.
-        let mut d = PrintDraft::default();
-        d.sheet = 5;
+        let d = PrintDraft { sheet: 5, ..PrintDraft::default() };
         let sizes = vec![(2_000.0, 2_000.0); 12];
         let labels: Vec<String> = (1..=12).map(|n| n.to_string()).collect();
         let rasters = preview_rasters(&d, &sizes, &labels, 4.0, 16384.0);
