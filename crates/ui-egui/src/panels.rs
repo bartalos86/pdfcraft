@@ -968,7 +968,7 @@ fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut crate::DocVie
                 egui::StrokeKind::Outside,
             );
             ui.label(egui::RichText::new(&p.label).font(theme::medium(12.0)).color(if selected || picked { t.accent_text } else { t.text_muted }));
-            let mut resp = theme::hand(resp);
+            let resp = theme::hand(resp);
             if resp.clicked() {
                 let m = ui.input(|i| i.modifiers);
                 if m.shift || m.command {
