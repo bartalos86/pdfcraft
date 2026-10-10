@@ -142,8 +142,22 @@ pub struct Certificate {
 /// Extensions PdfCraft reads or may safely ignore when they are critical: the ones
 /// `Extensions::read` handles, subject/issuer alternative names, and certificate policies
 /// (accepted as any policy).
-const PROCESSED_EXTENSIONS: [&str; 10] =
-    ["2.5.29.19", "2.5.29.15", "2.5.29.14", "2.5.29.35", "2.5.29.37", "1.3.6.1.5.5.7.1.1", "2.5.29.31", "2.5.29.17", "2.5.29.18", "2.5.29.32"];
+/// qcStatements (1.3.6.1.5.5.7.1.3) is included: RFC 3739 lets qualified (eIDAS and other national)
+/// certificates mark it critical, and it declares the certificate's status rather than limiting
+/// what the key may sign.
+const PROCESSED_EXTENSIONS: [&str; 11] = [
+    "2.5.29.19",
+    "2.5.29.15",
+    "2.5.29.14",
+    "2.5.29.35",
+    "2.5.29.37",
+    "1.3.6.1.5.5.7.1.1",
+    "2.5.29.31",
+    "2.5.29.17",
+    "2.5.29.18",
+    "2.5.29.32",
+    "1.3.6.1.5.5.7.1.3",
+];
 
 /// Extended key usages that allow signing documents: anyExtendedKeyUsage, emailProtection,
 /// codeSigning, documentSigning (RFC 9336), Adobe Authentic Documents and Microsoft document
